@@ -1,1 +1,18 @@
-test
+{
+    "name": "Cloudflare Index Repo",
+    "version": "1.0.0",
+    "scrapers": [
+        {
+            "id": "cloudflare-index",
+            "name": "Cloudflare Index",
+            "description": "Movies, TV & Anime from a Cloudflare Workers directory index with TMDB auto-matching, multi-quality and multi-language support",
+            "version": "1.0.0",
+            "author": "elixir3847",
+            "supportedTypes": ["movie", "tv", "anime"],
+            "filename": "providers/worker.js",
+            "enabled": true,
+            "formats": ["mkv", "mp4", "avi", "ts", "mov", "webm"],
+            "contentLanguage": ["en", "hi", "ja", "ko", "es", "fr", "de", "ta", "te"]
+        }
+    ]
+}
