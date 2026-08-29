@@ -33,8 +33,8 @@ var QUALITY_ORDER = {
     '1080p': 4,
     '720p': 3,
     '480p': 2,
-    '360p': 1,
-    'Unknown': 0
+    'SD': 1,
+    '360p': 0
 };
 
 // ── Utility Functions ────────────────────────────────────────────────────────
@@ -53,7 +53,6 @@ function decodeHtmlEntities(text) {
 // Returns array of { href, text, size, isFolder }.
 function parseDirectoryListing(html) {
     var entries = [];
-    // The index uses <tr><td><a href="...">text</a></td><td>size</td></tr>
     var regex = /<a\s+href="([^"]+)"[^>]*>([^<]+)<\/a>\s*<\/td>\s*<td[^>]*>([^<]*)<\/td>/gi;
     var match;
     while ((match = regex.exec(html)) !== null) {
@@ -61,21 +60,20 @@ function parseDirectoryListing(html) {
         var text = decodeHtmlEntities(match[2]).trim();
         var size = match[3] ? match[3].trim() : '';
 
-        // Skip parent directory and root links
         if (href === '../' || href === '/' || href === '..' || text === '../') continue;
 
         var isFolder = text.charAt(text.length - 1) === '/' || href.charAt(href.length - 1) === '/';
         entries.push({
             href: href,
             text: isFolder ? text.replace(/\/$/, '') : text,
-            size: (size === '—' || size === '') ? '' : size,
+            size: (size === '—' || size === '' || size === '\u2014') ? '' : size,
             isFolder: isFolder
         });
     }
     return entries;
 }
 
-// Normalize a title for fuzzy comparison (lowercase, strip punctuation, collapse spaces)
+// Normalize a title for fuzzy comparison
 function normalizeTitle(title) {
     return title.toLowerCase()
         .replace(/[:;'",.!?()\[\]{}]/g, ' ')
@@ -84,8 +82,7 @@ function normalizeTitle(title) {
         .trim();
 }
 
-// Find the best matching folder for a given title + year.
-// Tries exact match, then substring (both directions), returns highest-scoring match.
+// Find the best matching folder for a given title + year
 function matchFolder(folders, title, year, altTitle) {
     var normTitle = normalizeTitle(title);
     var normAlt = altTitle ? normalizeTitle(altTitle) : '';
@@ -96,7 +93,6 @@ function matchFolder(folders, title, year, altTitle) {
         if (!folders[i].isFolder) continue;
         var folderText = folders[i].text;
 
-        // Extract title and year from "Title (Year)" pattern
         var yearMatch = folderText.match(/^(.+?)\s*\((\d{4})\)\s*$/);
         var folderTitle, folderYear;
         if (yearMatch) {
@@ -109,7 +105,6 @@ function matchFolder(folders, title, year, altTitle) {
 
         var normFolder = normalizeTitle(folderTitle);
 
-        // Check title match (exact or substring either direction)
         var titleMatched = false;
         if (normFolder === normTitle || (normAlt && normFolder === normAlt)) {
             titleMatched = true;
@@ -121,15 +116,12 @@ function matchFolder(folders, title, year, altTitle) {
 
         if (titleMatched) {
             var score = 1;
-            // Exact title match scores higher than substring
             if (normFolder === normTitle || (normAlt && normFolder === normAlt)) score += 2;
-            // Year match is a strong signal
             if (year && folderYear === year) {
                 score += 3;
             } else if (year && folderYear && folderYear !== year) {
-                score -= 2; // Different year is a strong negative
+                score -= 2;
             }
-            // Prefer shorter folder titles (closer to actual title)
             score -= normFolder.length * 0.001;
 
             if (score > bestScore) {
@@ -141,7 +133,7 @@ function matchFolder(folders, title, year, altTitle) {
     return bestMatch;
 }
 
-// Find the season folder matching a season number (handles "Season 01", "Season 1", "S01", "S1")
+// Find the season folder matching a season number
 function findSeasonFolder(entries, seasonNum) {
     var sPadded = seasonNum < 10 ? '0' + seasonNum : '' + seasonNum;
     var sPlain = '' + seasonNum;
@@ -159,7 +151,6 @@ function findSeasonFolder(entries, seasonNum) {
             return entries[i];
         }
 
-        // Fallback: contains "season" and the number
         if (t.indexOf('season') !== -1) {
             if (t.indexOf(sPadded) !== -1 || t.indexOf(' ' + sPlain + ' ') !== -1 || t.indexOf(' ' + sPlain + '/') !== -1) {
                 return entries[i];
@@ -169,26 +160,45 @@ function findSeasonFolder(entries, seasonNum) {
     return null;
 }
 
-// Check if a filename matches S{season}E{episode} with various separators and padding
-// Uses regex with negative lookahead to prevent S01E1 from matching S01E10
+// Check if a filename matches S{season}E{episode}
 function matchEpisode(filename, seasonNum, episodeNum) {
     var s = '' + seasonNum;
     var e = '' + episodeNum;
-    // Pattern: S + optional 0 + seasonNum + E + optional 0 + episodeNum + not followed by digit
     var regex = new RegExp('S0?' + s + 'E0?' + e + '(?!\\d)', 'i');
     return regex.test(filename);
 }
 
-// Extract quality (720p, 1080p, 4K, etc.) from a filename
-function extractQuality(filename) {
-    var q = filename.match(/\b(2160p|4k|1080p|720p|480p|360p)\b/i);
-    if (!q) return 'Unknown';
-    var val = q[1].toLowerCase();
-    if (val === '2160p') return '4K';
-    return val;
+// ── Quality Detection (from filename or inferred from file size) ─────────────
+
+// Infer quality from file size when not in filename
+// 8GB+ → 4K, 1.8GB+ → 1080p, 700MB+ → 720p, 250MB+ → 480p, else → SD
+function inferQualityFromSize(sizeStr) {
+    if (!sizeStr) return 'SD';
+    var m = sizeStr.match(/([\d.]+)\s*(GB|MB|TB)/i);
+    if (!m) return 'SD';
+    var size = parseFloat(m[1]);
+    var unit = m[2].toUpperCase();
+    var sizeMB = unit === 'GB' ? size * 1024 : unit === 'TB' ? size * 1024 * 1024 : size;
+    if (sizeMB > 6000) return '4K';
+    if (sizeMB > 1800) return '1080p';
+    if (sizeMB > 700) return '720p';
+    if (sizeMB > 250) return '480p';
+    return 'SD';
 }
 
-// Extract language info from a filename (Hindi, English, Japanese, Multi Audio, etc.)
+// Extract quality from filename, falling back to size inference
+function extractQuality(filename, size) {
+    var q = filename.match(/\b(2160p|4k|1080p|720p|480p|360p)\b/i);
+    if (q) {
+        var val = q[1].toLowerCase();
+        if (val === '2160p') return '4K';
+        return val;
+    }
+    // No quality marker in filename — infer from file size
+    return inferQualityFromSize(size);
+}
+
+// Extract language info from a filename
 function extractLanguage(filename) {
     var langs = [];
     if (/multi\s*audio/i.test(filename)) langs.push('Multi Audio');
@@ -204,12 +214,11 @@ function extractLanguage(filename) {
     if (/tamil/i.test(filename)) langs.push('Tamil');
     if (/telugu/i.test(filename)) langs.push('Telugu');
 
-    // Remove duplicates from Multi/Dual Audio overlap
     if (langs.length === 0) return '';
     return langs.join(' + ');
 }
 
-// Extract codec info from a filename (x265, HEVC, x264, etc.)
+// Extract codec info from a filename
 function extractCodec(filename) {
     if (/x265|hevc/i.test(filename)) return 'x265 HEVC';
     if (/x264|h264|avc/i.test(filename)) return 'x264';
@@ -217,10 +226,25 @@ function extractCodec(filename) {
     return '';
 }
 
-// URL-encode a path while preserving slashes
+// ── Filename Cleanup for Display ─────────────────────────────────────────────
+
+// Clean a filename for display: remove extension, hash brackets, extra spaces
+function cleanFilename(filename) {
+    var clean = filename.replace(/\.(mkv|mp4|avi|ts|mov|webm|m4v|flv|wmv)$/i, '');
+    // Remove hash brackets like [363B9913]
+    clean = clean.replace(/\[[A-Fa-f0-9]{6,}\]/g, '');
+    // Remove release group tags like [PSA], [ESub]
+    clean = clean.replace(/\[[A-Z]{2,}\]/g, '');
+    // Clean up extra spaces
+    clean = clean.replace(/\s+/g, ' ').trim();
+    // Remove trailing separator
+    clean = clean.replace(/\s*[-–]\s*$/, '');
+    return clean;
+}
+
+// ── URL/path helpers ─────────────────────────────────────────────────────────
+
 function encodePath(path) {
-    // The hrefs from the index are NOT URL-encoded, so we encode here
-    // but preserve the path structure
     return path.split('/').map(function(seg) {
         try {
             return encodeURIComponent(decodeURIComponent(seg));
@@ -230,13 +254,11 @@ function encodePath(path) {
     }).join('/');
 }
 
-// Build the full stream URL from an href
 function buildStreamUrl(href) {
     if (href.indexOf('http') === 0) return href;
     return INDEX_URL + encodePath(href);
 }
 
-// Check if a filename is a video file
 function isVideoFile(filename) {
     return /\.(mkv|mp4|avi|ts|mov|webm|m4v|flv|wmv)$/i.test(filename);
 }
@@ -244,6 +266,7 @@ function isVideoFile(filename) {
 // ── Stream Builders ──────────────────────────────────────────────────────────
 
 // Build stream objects for all video files in a movie folder
+// Quality always shown — inferred from file size if not in filename
 function buildMovieStreams(files, title, year) {
     var streams = [];
 
@@ -251,30 +274,27 @@ function buildMovieStreams(files, title, year) {
         var f = files[i];
         if (f.isFolder || !isVideoFile(f.text)) continue;
 
-        var quality = extractQuality(f.text);
+        var quality = extractQuality(f.text, f.size);
         var language = extractLanguage(f.text);
         var codec = extractCodec(f.text);
         var url = buildStreamUrl(f.href);
 
-        // Build a clean display name: "CF-Index · 1080p · Hindi + English"
+        // Quality-first naming: CF-Index · 1080p · x265 HEVC · Hindi + English
         var nameParts = ['CF-Index'];
+        nameParts.push(quality);
         if (codec) nameParts.push(codec);
         if (language) nameParts.push(language);
-        nameParts.push(quality);
 
-        // Build the title: original filename gives full context
-        var titleParts = [];
-        if (language) titleParts.push('[' + language + ']');
-        if (codec) titleParts.push(codec);
-        titleParts.push(quality);
-        if (f.size) titleParts.push('· ' + f.size);
+        // Clean filename for display title
+        var displayTitle = cleanFilename(f.text);
+        if (f.size) displayTitle += ' · ' + f.size;
 
         streams.push({
             name: nameParts.join(' · '),
-            title: title + ' (' + year + ') ' + titleParts.join(' '),
+            title: displayTitle,
             url: url,
             quality: quality,
-            size: f.size || 'Unknown',
+            size: f.size || '',
             headers: WORKING_HEADERS,
             provider: 'cloudflare-index'
         });
@@ -297,7 +317,7 @@ function buildEpisodeStreams(files, title, year, seasonNum, episodeNum) {
         if (f.isFolder || !isVideoFile(f.text)) continue;
         if (!matchEpisode(f.text, seasonNum, episodeNum)) continue;
 
-        var quality = extractQuality(f.text);
+        var quality = extractQuality(f.text, f.size);
         var language = extractLanguage(f.text);
         var codec = extractCodec(f.text);
         var url = buildStreamUrl(f.href);
@@ -306,23 +326,22 @@ function buildEpisodeStreams(files, title, year, seasonNum, episodeNum) {
         var ePadded = episodeNum < 10 ? '0' + episodeNum : '' + episodeNum;
         var epLabel = 'S' + sPadded + 'E' + ePadded;
 
+        // Quality-first naming
         var nameParts = ['CF-Index'];
+        nameParts.push(quality);
         if (codec) nameParts.push(codec);
         if (language) nameParts.push(language);
-        nameParts.push(quality);
 
-        var titleParts = [];
-        if (language) titleParts.push('[' + language + ']');
-        if (codec) titleParts.push(codec);
-        titleParts.push(quality);
-        if (f.size) titleParts.push('· ' + f.size);
+        // Clean filename for display
+        var displayTitle = cleanFilename(f.text);
+        if (f.size) displayTitle += ' · ' + f.size;
 
         streams.push({
             name: nameParts.join(' · '),
-            title: title + ' ' + epLabel + ' ' + titleParts.join(' '),
+            title: displayTitle,
             url: url,
             quality: quality,
-            size: f.size || 'Unknown',
+            size: f.size || '',
             headers: WORKING_HEADERS,
             provider: 'cloudflare-index'
         });
@@ -337,8 +356,6 @@ function buildEpisodeStreams(files, title, year, seasonNum, episodeNum) {
 
 // ── TMDB Metadata ───────────────────────────────────────────────────────────
 
-// Fetch TMDB metadata for a movie or TV show.
-// Returns { title, altTitle, year, searchPath } or null on failure.
 function fetchTmdbMetadata(tmdbId, mediaType) {
     var cleanId = tmdbId.replace(/^tmdb:/, '').replace(/^tt/, '');
 
@@ -360,7 +377,6 @@ function fetchTmdbMetadata(tmdbId, mediaType) {
         .then(function(resp) { return resp.json(); })
         .then(function(data) {
             if (!data || data.success === false || data.status_code === 34) {
-                // For anime, if TV endpoint fails, try movie endpoint
                 if (mediaType === 'anime') {
                     return fetch(TMDB_BASE_URL + '/movie/' + cleanId + '?api_key=' + TMDB_API_KEY + '&language=en-US')
                         .then(function(r) { return r.json(); })
@@ -408,7 +424,6 @@ function extractTmdbInfo(data, isTv, searchPath) {
 
 // ── Directory Fetching ──────────────────────────────────────────────────────
 
-// Fetch and parse a directory listing from the index site
 function fetchDirectory(path) {
     var url = INDEX_URL + encodePath(path);
     return fetch(url, { headers: WORKING_HEADERS })
@@ -422,7 +437,6 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
     return new Promise(function(resolve, reject) {
         console.log('[CF-Index] getStreams called: tmdbId=' + tmdbId + ' type=' + mediaType + ' S' + seasonNum + 'E' + episodeNum);
 
-        // Step 1: Fetch TMDB metadata
         fetchTmdbMetadata(tmdbId, mediaType)
             .then(function(meta) {
                 if (!meta) {
@@ -433,10 +447,8 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
 
                 console.log('[CF-Index] TMDB match: ' + meta.title + ' (' + meta.year + ') alt: ' + (meta.altTitle || 'none'));
 
-                // Step 2: Fetch the Movies/ or Shows/ directory listing
                 fetchDirectory(meta.searchPath)
                     .then(function(folders) {
-                        // Step 3: Find the matching folder
                         var matched = matchFolder(folders, meta.title, meta.year, meta.altTitle);
 
                         if (!matched) {
@@ -447,17 +459,13 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
 
                         console.log('[CF-Index] Matched folder: ' + matched.text);
 
-                        // Step 4: Fetch the contents of the matched folder
-                        var folderPath = matched.href;
-                        fetchDirectory(folderPath)
+                        fetchDirectory(matched.href)
                             .then(function(contents) {
                                 if (mediaType === 'movie') {
-                                    // Movies: return all video files in the folder
                                     var streams = buildMovieStreams(contents, meta.title, meta.year);
                                     console.log('[CF-Index] Found ' + streams.length + ' movie streams');
                                     resolve(streams);
                                 } else {
-                                    // TV / Anime: find season folder, then episode
                                     var seasonFolder = findSeasonFolder(contents, seasonNum);
 
                                     if (seasonFolder) {
@@ -472,14 +480,13 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
                                             })
                                             .catch(function(err) {
                                                 console.error('[CF-Index] Error fetching season:', err.message);
-                                                // Fallback: maybe episodes are in the show root
                                                 var streams = buildEpisodeStreams(
                                                     contents, meta.title, meta.year, seasonNum, episodeNum
                                                 );
                                                 resolve(streams);
                                             });
                                     } else {
-                                        // No season subfolder — episodes might be directly in the show folder
+                                        // No season subfolder — episodes might be directly in show root
                                         console.log('[CF-Index] No season folder, searching in show root');
                                         var streams = buildEpisodeStreams(
                                             contents, meta.title, meta.year, seasonNum, episodeNum
@@ -508,7 +515,6 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
 
 // ── Export ──────────────────────────────────────────────────────────────────
 
-// Export for React Native compatibility
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { getStreams: getStreams };
 } else {
