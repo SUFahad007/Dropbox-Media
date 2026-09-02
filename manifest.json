@@ -1,18 +1,19 @@
-{
-    "name": "Cloudflare Index Repo",
-    "version": "1.0.0",
-    "scrapers": [
-        {
-            "id": "cloudflare-index",
-            "name": "Cloudflare Index",
-            "description": "Movies, TV & Anime from a Cloudflare Workers directory index with TMDB auto-matching, multi-quality and multi-language support",
-            "version": "1.0.0",
-            "author": "elixir3847",
-            "supportedTypes": ["movie", "tv", "anime"],
-            "filename": "providers/worker.js",
-            "enabled": true,
-            "formats": ["mkv", "mp4", "avi", "ts", "mov", "webm"],
-            "contentLanguage": ["en", "hi", "ja", "ko", "es", "fr", "de", "ta", "te"]
-        }
-    ]
-}
+[
+  {
+    "id": "cf-dropbox-index",
+    "name": "Dropbox Index",
+    "description": "Direct streams from your Dropbox library via Cloudflare Workers",
+    "version": "1.1.0",
+    "author": "elixir3847",
+    "supportedTypes": ["movie", "tv"],
+    "filename": "providers/cf-index.js",
+    "enabled": true,
+    "logo": "",
+    "contentLanguage": ["en"],
+    "formats": ["mp4", "mkv", "avi", "mov", "webm", "ts", "m4v", "flv", "wmv"],
+    "limited": false,
+    "disabledPlatforms": [],
+    "supportsExternalPlayer": true,
+    "hasSettings": false
+  }
+]
