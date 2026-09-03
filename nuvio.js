@@ -340,7 +340,7 @@ function resolveSeries(id, season, episode, fetchListing2, makeStream2) {
 // plugin.js
 function fetchListing(path) {
   return __async(this, null, function* () {
-    const resp = yield fetch(INDEX_URL + "/api" + path);
+    const resp = yield fetch(INDEX_URL + "/api" + encodePath(path));
     const data = yield resp.json();
     return data.entries || [];
   });
