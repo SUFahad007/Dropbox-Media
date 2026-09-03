@@ -78,9 +78,8 @@ function streamUrl(path) {
 }
 function fetchWithTimeout(_0) {
   return __async(this, arguments, function* (url, opts = {}, ms = 1e4) {
-    if (typeof AbortController === "undefined") {
-      return fetch(url, opts);
-    }
+    const canTime = typeof AbortController !== "undefined" && typeof setTimeout === "function";
+    if (!canTime) return fetch(url, opts);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), ms);
     try {
@@ -140,6 +139,16 @@ function parseMetadata(filename) {
   if (codec) parts.push(codec);
   return { quality, codec, audio, hdr, source, format: ext };
 }
+function humanSize(bytes) {
+  if (!bytes || bytes <= 0) return "";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0, v = bytes;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return v >= 100 ? Math.round(v) + " " + units[i] : v.toFixed(1) + " " + units[i];
+}
 function buildStreamTitle(meta, fileSize) {
   const parts = [];
   if (meta.quality && meta.quality !== "Unknown") parts.push(meta.quality);
@@ -148,7 +157,7 @@ function buildStreamTitle(meta, fileSize) {
   if (meta.audio) parts.push(meta.audio);
   if (meta.codec) parts.push(meta.codec);
   const metaStr = parts.length ? " \xB7 " + parts.join(" \xB7 ") : "";
-  const sizeStr = fileSize ? " \xB7 " + fileSize : "";
+  const sizeStr = fileSize ? " \xB7 " + (typeof fileSize === "number" ? humanSize(fileSize) : fileSize) : "";
   return metaStr + sizeStr;
 }
 function tmdbTitle(id, type) {
@@ -247,7 +256,15 @@ function matchEp(filename, season, episode) {
 }
 function findSubtitles(files, videoName) {
   const base = videoName.replace(/\.[^.]+$/, "").toLowerCase();
-  return files.filter((f) => !f.isFolder && isSubtitle(f.name) && f.name.replace(/\.[^.]+$/, "").toLowerCase() === base).map((f) => ({ url: streamUrl(f.path), lang: "en" }));
+  return files.filter((f) => !f.isFolder && isSubtitle(f.name) && f.name.replace(/\.[^.]+$/, "").toLowerCase() === base).map((f) => ({
+    url: streamUrl(f.path),
+    language: "en",
+    // Nuvio reads `language`
+    lang: "en",
+    // Stremio reads `lang`
+    name: f.name
+    // display name
+  }));
 }
 function resolveMovie(id, fetchListing2, makeStream2) {
   return __async(this, null, function* () {
@@ -330,18 +347,19 @@ function fetchListing(path) {
 }
 function makeStream(file, subtitles) {
   const meta = parseMetadata(file.name);
-  return {
+  return __spreadProps(__spreadValues({
     name: "Dropbox",
     title: file.name + buildStreamTitle(meta, file.size),
     url: streamUrl(file.path),
     quality: meta.quality,
-    size: file.size || 0,
+    size: file.size != null ? String(file.size) : void 0,
+    // Nuvio expects a string
     format: meta.format,
-    headers: PLAYBACK_HEADERS,
-    behaviorHints: __spreadValues({
-      notWebReady: true
-    }, subtitles && subtitles.length ? { subtitles } : {})
-  };
+    headers: PLAYBACK_HEADERS
+  }, subtitles && subtitles.length ? { subtitles } : {}), {
+    // Nuvio reads top-level
+    behaviorHints: { notWebReady: true }
+  });
 }
 function getStreams(tmdbId, mediaType, season, episode) {
   return __async(this, null, function* () {
