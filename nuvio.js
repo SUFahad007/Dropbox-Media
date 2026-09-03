@@ -78,6 +78,9 @@ function streamUrl(path) {
 }
 function fetchWithTimeout(_0) {
   return __async(this, arguments, function* (url, opts = {}, ms = 1e4) {
+    if (typeof AbortController === "undefined") {
+      return fetch(url, opts);
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), ms);
     try {
@@ -236,7 +239,10 @@ function findSeason(entries, seasonNum) {
   return null;
 }
 function matchEp(filename, season, episode) {
-  return new RegExp(`S0?${season}E0?${episode}(?!\\d)`, "i").test(filename);
+  const m = String(filename).toUpperCase().match(new RegExp("S0?" + season + "E0?" + episode));
+  if (!m) return false;
+  const rest = String(filename).toUpperCase().slice(m.index + m[0].length);
+  return !/^\d/.test(rest);
 }
 function findSubtitles(files, videoName) {
   const base = videoName.replace(/\.[^.]+$/, "").toLowerCase();
@@ -341,7 +347,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
     try {
       if (mediaType === "movie") {
         return yield resolveMovie(tmdbId, fetchListing, makeStream);
-      } else if (mediaType === "tv") {
+      } else if (mediaType === "tv" || mediaType === "series") {
         return yield resolveSeries(tmdbId, season, episode, fetchListing, makeStream);
       }
       return [];
