@@ -5,7 +5,6 @@
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 var TMDB_BASE = "https://api.themoviedb.org/3";
 var INDEX_URL = "https://dropbox-index.rumble2620.workers.dev";
-var PROXY_URL = "https://base44.app/api/apps/6a8af559368095676af79aa0/functions/nuvioProxy";
 var PLAYBACK_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   "Accept": "video/*,*/*;q=0.8",
@@ -335,7 +334,7 @@ var MANIFEST = {
   behaviorHints: { configurable: false }
 };
 async function fetchListing(path) {
-  const resp = await fetch(PROXY_URL + "?path=" + encodeURIComponent("/api" + path));
+  const resp = await fetch(INDEX_URL + "/api" + path);
   const data = await resp.json();
   return data.entries || [];
 }
