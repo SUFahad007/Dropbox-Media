@@ -323,8 +323,8 @@ function parseSeriesId(rawId) {
 // addon.js
 var MANIFEST = {
   id: "cf-index-addon",
-  version: "3.2.0",
-  name: "Dropbox Index",
+  version: "3.2.1",
+  name: "Addon",
   description: "Direct streams from your Dropbox library via Cloudflare",
   types: ["movie", "series"],
   resources: [
@@ -334,7 +334,7 @@ var MANIFEST = {
   behaviorHints: { configurable: false }
 };
 async function fetchListing(path) {
-  const resp = await fetch(INDEX_URL + "/api" + path);
+  const resp = await fetch(INDEX_URL + "/api" + encodePath(path));
   const data = await resp.json();
   return data.entries || [];
 }
@@ -344,6 +344,7 @@ function makeStream(file, subtitles) {
     name: "Dropbox",
     title: file.name + buildStreamTitle(meta, file.size),
     url: streamUrl(file.path),
+    quality: meta.quality,
     ...subtitles && subtitles.length ? { subtitles } : {},
     // Stremio spec: top-level
     behaviorHints: {
@@ -353,7 +354,15 @@ function makeStream(file, subtitles) {
   };
 }
 var addon_default = {
-  async fetch(request) {
+  async fetch(request, env) {
+    if (env && env.INDEX && !globalThis.__indexBound) {
+      globalThis.__indexBound = true;
+      const realFetch = globalThis.fetch.bind(globalThis);
+      globalThis.fetch = (input, init) => {
+        const u = typeof input === "string" ? input : String(input && input.url || input);
+        return u.startsWith(INDEX_URL) ? env.INDEX.fetch(u, init) : realFetch(input, init);
+      };
+    }
     const url = new URL(request.url);
     const path = url.pathname;
     const cors = {
@@ -373,7 +382,7 @@ var addon_default = {
         const m = await resolveMovie("tt1375666", fetchListing, makeStream);
         const s = await resolveSeries("tt0903747", 1, 1, fetchListing, makeStream);
         return new Response(JSON.stringify({
-          version: "3.2.0",
+          version: "3.2.1",
           movie: { count: m.length, sample: m[0] },
           series: { count: s.length, sample: s[0] }
         }, null, 2), { headers: { ...cors, "Content-Type": "application/json" } });
