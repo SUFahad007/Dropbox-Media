@@ -1,88 +1,59 @@
-# Nuvio Cloudflare Index Scraper
+# dropbox-media
 
-A local scraper pack for [Nuvio](https://nuvioapp.com) that pulls movies, TV shows, and anime from a Cloudflare Workers directory index site.
+Stream your Dropbox media library in Stremio and Nuvio.
 
-## Features
+Three components, one folder:
 
-- **TMDB auto-matching** — looks up titles and years via the TMDB API, then finds the matching folder on your index
-- **Movies, TV & Anime** — supports all three content types in one scraper
-- **Multi-quality** — detects 720p, 1080p, 4K (2160p) and other qualities from filenames, sorted highest first
-- **Multi-language** — extracts Hindi, English, Japanese, Korean, Tamil, Telugu and more from filenames
-- **Proper headers** — Referer + Origin set to the index site so streams actually load in the player
-- **Season/episode matching** — handles `Season 01` subfolders and `S01E01` episode patterns with variations
-- **React Native compatible** — Promise-based only, no async/await, no Node.js modules
+## Files
 
-## Installation
+| File | What it is | Where it goes |
+|------|-----------|---------------|
+| `dropbox-index.js` | Cloudflare Worker — indexes your Dropbox, serves HTML browsing + JSON API + search | Cloudflare Worker (`dropbox-index`) |
+| `stremio.js` | Stremio addon — resolves TMDB ids to Dropbox streams | Cloudflare Worker (addon) |
+| `nuvio.js` | Nuvio plugin — same streams, direct fetch, no proxy | GitHub repo → Nuvio sideload |
+| `manifest.json` | Nuvio plugin manifest | GitHub repo root, next to `nuvio.js` |
 
-### Option A: Direct URL (fastest)
-
-1. Open Nuvio → **Settings → Local Scrapers**
-2. Add the repository URL provided below
-3. Enable the "Cloudflare Index" scraper
-
-### Option B: Self-host on GitHub (recommended for long-term)
-
-1. Create a new public GitHub repository
-2. Upload all files from this folder, preserving the directory structure:
-   ```
-   manifest.json
-   src/providers/cloudflare-index.js
-   ```
-3. In Nuvio → **Settings → Local Scrapers**, add:
-   ```
-   https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/
-   ```
-4. Enable the scraper
-
-## Configuration
-
-The scraper is pre-configured for the index at:
-```
-https://dropbox-index.rumble2620.workers.dev
-```
-
-To point it at a different Cloudflare Workers index, edit `src/providers/cloudflare-index.js` and change the `INDEX_URL` variable.
-
-## Index Structure Expected
+## How it fits together
 
 ```
-/Movies/
-  Movie Title (Year)/
-    Movie Title (Year) 1080p x265 HEVC [Audio] ESub.mkv
-
-/Shows/
-  Show Name (Year)/
-    Season 01/
-      S01E01 - Episode Title.mkv
-    Season 02/
-      S02E01 - Episode Title.mkv
+Stremio ──→ stremio.js (CF Worker) ──→ dropbox-index.js (CF Worker) ──→ Dropbox API
+Nuvio   ─────────────────────────────→ dropbox-index.js (CF Worker) ──→ Dropbox API
 ```
 
-## How It Works
+- `dropbox-index.js` maps TMDB titles to your `Movies/` and `Shows/` folders
+  and returns direct stream URLs. Uses `/api/search` (1 request) with
+  fallback to folder listing + fuzzy matching (2 requests).
+- `stremio.js` goes through a proxy (same-account CF Workers can't fetch
+  each other directly); `nuvio.js` fetches the index directly — no proxy hop.
+- Streams are marked `notWebReady` — they hand off to VLC/MPV or your
+  external player instead of browser playback.
 
-1. Nuvio passes a TMDB ID + content type (movie/tv/anime) + season/episode numbers
-2. The scraper queries the TMDB API for the title and release year
-3. It fetches the `/Movies/` or `/Shows/` directory listing from your index
-4. Fuzzy-matches the folder name against the TMDB title + year
-5. For movies: returns all video files (multiple qualities if available)
-6. For TV/anime: navigates to the season folder, finds the matching episode
-7. Returns stream objects with quality, language, file size, and playback headers
+## Which file for which app
 
-## Stream Object Format
+- **Stremio** → `stremio.js` (deployed to a Cloudflare Worker)
+- **Nuvio** → `nuvio.js` (native plugin, preferred — direct fetch, no proxy)
+- **Nuvio also supports Stremio addons**, so `stremio.js` works there as a
+  fallback — but it re-adds the proxy hop, so `nuvio.js` is the better
+  choice in Nuvio.
 
-Each stream returns:
-- `name` — provider · codec · language · quality
-- `title` — full descriptive title with year, language, and quality
-- `url` — direct stream URL from the index
-- `quality` — 720p, 1080p, 4K, or Unknown
-- `size` — file size from the directory listing
-- `headers` — Referer/Origin/User-Agent headers for playback
-- `provider` — `cloudflare-index`
+## Deploy
 
-## Notes
+1. **Index worker** — paste `dropbox-index.js` into your `dropbox-index`
+   Cloudflare Worker. Secrets: `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`,
+   `DROPBOX_REFRESH_TOKEN`. KV binding: `DROPBOX_CACHE`. Cron: `*/5 * * * *`.
+2. **Stremio addon** — paste `stremio.js` into your addon Cloudflare Worker.
+3. **Nuvio plugin** — push `nuvio.js` + `manifest.json` to your GitHub repo,
+   install it in Nuvio via Install Plugin Repository.
 
-- The TMDB API key used is a shared public key commonly used across Nuvio/Stremio addons
-- All requests use `fetch()` — no external dependencies
-- Streams are sorted by quality (4K → 1080p → 720p → 480p)
-- If no match is found, the scraper returns an empty array (no error)
-- Fuzzy matching handles title variations (punctuation, alternate titles, subtitles in folder names)
+Deploy the index worker first — the addon/plugin fall back to the old
+listing approach if `/api/search` isn't there yet, but search is faster.
+
+## Folder structure expected in Dropbox
+
+```
+/Movies/Movie Title (Year)/file.mkv
+/Shows/Show Name (Year)/Season 01/Show S01E01.mkv
+```
+
+Optional `.srt`/`.vtt` subtitles next to a video file are picked up
+automatically (same filename, different extension).
