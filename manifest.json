@@ -4,7 +4,7 @@
   "scrapers": [
     {
       "id": "cf-dropbox-index",
-      "name": "Dropbox Index",
+      "name": "Plugin",
       "description": "Direct streams from your Dropbox library via Cloudflare Workers",
       "version": "1.1.4",
       "author": "elixir3847",
