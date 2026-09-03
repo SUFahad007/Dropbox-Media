@@ -154,6 +154,7 @@ function buildStreamTitle(meta, fileSize) {
 function tmdbTitle(id, type) {
   return __async(this, null, function* () {
     var _a, _b;
+    id = String(id);
     const tmdbType = type === "series" ? "tv" : "movie";
     let url, title, year;
     try {
