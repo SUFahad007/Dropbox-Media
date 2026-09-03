@@ -5,7 +5,7 @@
   "version": "1.1.0",
   "author": "elixir3847",
   "supportedTypes": ["movie", "tv"],
-  "filename": "providers/cf-index.js",
+  "filename": "nuvio.js",
   "enabled": true,
   "logo": "",
   "contentLanguage": ["en"],
