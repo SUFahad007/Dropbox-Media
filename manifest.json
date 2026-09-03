@@ -6,7 +6,7 @@
       "id": "cf-dropbox-index",
       "name": "Dropbox Index",
       "description": "Direct streams from your Dropbox library via Cloudflare Workers",
-      "version": "1.1.6",
+      "version": "1.1.4",
       "author": "elixir3847",
       "supportedTypes": ["movie", "tv"],
       "filename": "nuvio.js",
