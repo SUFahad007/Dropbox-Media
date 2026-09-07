@@ -164,6 +164,15 @@ function humanSize(bytes) {
   }
   return v >= 100 ? Math.round(v) + " " + units[i] : v.toFixed(1) + " " + units[i];
 }
+function formatSize(size) {
+  if (size == null) return "";
+  if (typeof size === "number") return humanSize(size);
+  const s = String(size).trim();
+  const m = s.match(/^([\d.]+)\s*(B|KB|MB|GB|TB)$/i);
+  if (m) return s;
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? humanSize(n) : s;
+}
 function buildStreamTitle(meta, fileSize) {
   const parts = [];
   if (meta.quality && meta.quality !== "Unknown") parts.push(meta.quality);
@@ -377,8 +386,8 @@ function makeStream(file, subtitles) {
     url: streamUrl(file.path),
     quality: meta.quality,
     sequence: qualityRank(meta.quality),
-    size: file.size != null ? String(file.size) : void 0,
-    // Nuvio expects a string
+    size: file.size != null ? formatSize(file.size) : void 0,
+    // Nuvio shows this raw — must be pretty
     format: meta.format,
     headers: PLAYBACK_HEADERS
   }, subtitles && subtitles.length ? { subtitles } : {}), {
