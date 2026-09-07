@@ -90,7 +90,7 @@ function fetchWithTimeout(_0) {
     }
   });
 }
-function parseMetadata(filename) {
+function parseMetadata(filename, sizeBytes) {
   var _a;
   const name = filename.toLowerCase();
   const ext = ((_a = (filename.match(/\.([a-z0-9]+)$/i) || [])[1]) == null ? void 0 : _a.toLowerCase()) || "";
@@ -101,6 +101,21 @@ function parseMetadata(filename) {
   else if (/480p|sd/.test(name)) quality = "480p";
   else if (/576p/.test(name)) quality = "576p";
   else if (/360p/.test(name)) quality = "360p";
+  if (quality === "Unknown") {
+    let bytes = 0;
+    if (typeof sizeBytes === "number") bytes = sizeBytes;
+    else if (typeof sizeBytes === "string") {
+      const m = sizeBytes.match(/^([\d.]+)\s*(B|KB|MB|GB|TB)/i);
+      if (m) {
+        const mult = { B: 1, KB: 1024, MB: 1048576, GB: 1073741824, TB: 1099511627776 }[m[2].toUpperCase()];
+        bytes = parseFloat(m[1]) * mult;
+      }
+    }
+    if (bytes >= 6e9) quality = "4K";
+    else if (bytes >= 12e8) quality = "1080p";
+    else if (bytes >= 4e8) quality = "720p";
+    else if (bytes > 0) quality = "480p";
+  }
   let codec = "";
   if (/hevc|x265|h\.?265|av1/.test(name)) codec = /av1/.test(name) ? "AV1" : "HEVC";
   else if (/x264|h\.?264/.test(name)) codec = "H.264";
@@ -237,6 +252,10 @@ function findFolder(folders, title, year) {
   }
   return best;
 }
+function qualityRank(quality) {
+  const ranks = { "4K": 1, "1080p": 2, "720p": 3, "576p": 4, "480p": 5, "360p": 6 };
+  return ranks[quality] || 9;
+}
 function findSeason(entries, seasonNum) {
   const sPad = String(seasonNum).padStart(2, "0");
   const sPlain = String(seasonNum);
@@ -269,7 +288,8 @@ function findSubtitles(files, videoName) {
 function resolveMovie(id, fetchListing2, makeStream2) {
   return __async(this, null, function* () {
     const info = yield tmdbTitle(id, "movie");
-    if (!info) return [];
+    if (!info) throw new Error('TMDB lookup failed for "' + id + '"');
+    const label = '"' + info.title + (info.year ? " (" + info.year + ")" : "") + '"';
     try {
       const searchUrl = INDEX_URL + "/api/search?q=" + encodeURIComponent(info.title) + "&type=movie" + (info.year ? "&year=" + info.year : "");
       const r = yield fetchWithTimeout(searchUrl, {}, INDEX_TIMEOUT);
@@ -278,17 +298,20 @@ function resolveMovie(id, fetchListing2, makeStream2) {
         if (data.results && data.results.length) {
           const files2 = data.results[0].files || [];
           const videoFiles2 = files2.filter((f) => !f.isFolder && isVideo(f.name));
-          const subs2 = videoFiles2.length ? findSubtitles(files2, videoFiles2[0].name) : [];
-          return videoFiles2.map((f) => makeStream2(f, subs2));
+          if (videoFiles2.length) {
+            const subs2 = findSubtitles(files2, videoFiles2[0].name);
+            return videoFiles2.map((f) => makeStream2(f, subs2));
+          }
         }
       }
     } catch (e) {
     }
     const folders = yield fetchListing2("/Movies/");
     const match = findFolder(folders, info.title, info.year);
-    if (!match) return [];
+    if (!match) throw new Error("No folder match for " + label + " in /Movies/");
     const files = yield fetchListing2(match.path);
     const videoFiles = files.filter((f) => !f.isFolder && isVideo(f.name));
+    if (!videoFiles.length) throw new Error('No video files in "' + match.path + '"');
     const subs = videoFiles.length ? findSubtitles(files, videoFiles[0].name) : [];
     return videoFiles.map((f) => makeStream2(f, subs));
   });
@@ -296,7 +319,7 @@ function resolveMovie(id, fetchListing2, makeStream2) {
 function resolveSeries(id, season, episode, fetchListing2, makeStream2) {
   return __async(this, null, function* () {
     const info = yield tmdbTitle(id, "series");
-    if (!info) return [];
+    if (!info) throw new Error('TMDB lookup failed for "' + id + '"');
     let showEntries = null;
     try {
       const searchUrl = INDEX_URL + "/api/search?q=" + encodeURIComponent(info.title) + "&type=tv" + (info.year ? "&year=" + info.year : "");
@@ -312,7 +335,7 @@ function resolveSeries(id, season, episode, fetchListing2, makeStream2) {
     if (!showEntries) {
       const folders = yield fetchListing2("/Shows/");
       const match = findFolder(folders, info.title, info.year);
-      if (!match) return [];
+      if (!match) throw new Error('No show folder for "' + info.title + (info.year ? " (" + info.year + ")" : "") + '" in /Shows/');
       showEntries = yield fetchListing2(match.path);
     }
     const seasonFolder = findSeason(showEntries, season);
@@ -333,6 +356,7 @@ function resolveSeries(id, season, episode, fetchListing2, makeStream2) {
         }
       }
     }
+    if (!streams.length) throw new Error("S" + String(season).padStart(2, "0") + "E" + String(episode).padStart(2, "0") + ' not found for "' + info.title + '"');
     return streams;
   });
 }
@@ -346,12 +370,13 @@ function fetchListing(path) {
   });
 }
 function makeStream(file, subtitles) {
-  const meta = parseMetadata(file.name);
+  const meta = parseMetadata(file.name, file.size);
   return __spreadProps(__spreadValues({
     name: "Dropbox",
     title: file.name + buildStreamTitle(meta, file.size),
     url: streamUrl(file.path),
     quality: meta.quality,
+    sequence: qualityRank(meta.quality),
     size: file.size != null ? String(file.size) : void 0,
     // Nuvio expects a string
     format: meta.format,
