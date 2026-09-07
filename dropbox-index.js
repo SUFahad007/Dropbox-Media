@@ -427,6 +427,9 @@ async function handleFile(env, request, dbPath) {
     "Content-Disposition": `attachment; filename="${name.replace(/"/g, "_")}"`,
     "Accept-Ranges": "bytes",
     "Cache-Control": "public, max-age=3600",
+    // CORS: lets Stremio Web / browser players fetch media directly
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length",
   };
   const cl = res.headers.get("Content-Length");
   if (cl) out["Content-Length"] = cl;
