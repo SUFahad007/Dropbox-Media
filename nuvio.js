@@ -261,10 +261,6 @@ function findFolder(folders, title, year) {
   }
   return best;
 }
-function qualityRank(quality) {
-  const ranks = { "4K": 1, "1080p": 2, "720p": 3, "576p": 4, "480p": 5, "360p": 6 };
-  return ranks[quality] || 9;
-}
 function findSeason(entries, seasonNum) {
   const sPad = String(seasonNum).padStart(2, "0");
   const sPlain = String(seasonNum);
@@ -380,19 +376,14 @@ function fetchListing(path) {
 }
 function makeStream(file, subtitles) {
   const meta = parseMetadata(file.name, file.size);
-  const displayQuality = [
-    meta.quality !== "Unknown" ? meta.quality : "",
-    meta.source,
-    meta.audio,
-    meta.codec
-  ].filter(Boolean).join(" ");
   return __spreadProps(__spreadValues({
     name: file.name,
     // Nuvio: name = name ?: title → bold line = full filename
     title: file.name + buildStreamTitle(meta, file.size),
     url: streamUrl(file.path),
-    quality: displayQuality || meta.quality,
-    sequence: qualityRank(meta.quality),
+    // No `quality` sent: Nuvio hardcodes the card line as `quality • size • language`
+    // in toStreamItem — a blank field is dropped, so the line collapses to just the
+    // size. That gives us exactly: bold filename + size, nothing else.
     size: file.size != null ? formatSize(file.size) : void 0,
     // Nuvio shows this raw — must be pretty
     format: meta.format,
