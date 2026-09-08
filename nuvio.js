@@ -40,7 +40,7 @@ var __async = (__this, __arguments, generator) => {
   });
 };
 
-// core.js
+// dropbox-stream/core.js
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 var TMDB_BASE = "https://api.themoviedb.org/3";
 var INDEX_URL = "https://dropbox-index.rumble2620.workers.dev";
@@ -370,7 +370,7 @@ function resolveSeries(id, season, episode, fetchListing2, makeStream2) {
   });
 }
 
-// plugin.js
+// dropbox-stream/plugin.js
 function fetchListing(path) {
   return __async(this, null, function* () {
     const resp = yield fetch(INDEX_URL + "/api" + path);
@@ -380,11 +380,18 @@ function fetchListing(path) {
 }
 function makeStream(file, subtitles) {
   const meta = parseMetadata(file.name, file.size);
+  const displayQuality = [
+    meta.quality !== "Unknown" ? meta.quality : "",
+    meta.source,
+    meta.audio,
+    meta.codec
+  ].filter(Boolean).join(" ");
   return __spreadProps(__spreadValues({
-    name: "Dropbox",
+    name: file.name,
+    // Nuvio: name = name ?: title → bold line = full filename
     title: file.name + buildStreamTitle(meta, file.size),
     url: streamUrl(file.path),
-    quality: meta.quality,
+    quality: displayQuality || meta.quality,
     sequence: qualityRank(meta.quality),
     size: file.size != null ? formatSize(file.size) : void 0,
     // Nuvio shows this raw — must be pretty
