@@ -12,7 +12,7 @@
         "movie",
         "tv"
       ],
-      "filename": "nuvio.js",
+      "filename": "plugin.js",
       "enabled": true,
       "logo": "",
       "contentLanguage": [
