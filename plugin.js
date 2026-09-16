@@ -311,9 +311,9 @@ function resolveMovie(id, fetchListing2, makeStream2) {
       }
     } catch (e) {
     }
-    const folders = yield fetchListing2("/Stream/movie/");
+    const folders = yield fetchListing2("/movie/");
     const match = findFolder(folders, info.title, info.year);
-    if (!match) throw new Error("No folder match for " + label + " in /Stream/movie/");
+    if (!match) throw new Error("No folder match for " + label + " in /movie/");
     const files = yield fetchListing2(match.path);
     const videoFiles = files.filter((f) => !f.isFolder && isVideo(f.name));
     if (!videoFiles.length) throw new Error('No video files in "' + match.path + '"');
@@ -338,9 +338,9 @@ function resolveSeries(id, season, episode, fetchListing2, makeStream2) {
     } catch (e) {
     }
     if (!showEntries) {
-      const folders = yield fetchListing2("/Stream/tv/");
+      const folders = yield fetchListing2("/tv/");
       const match = findFolder(folders, info.title, info.year);
-      if (!match) throw new Error('No show folder for "' + info.title + (info.year ? " (" + info.year + ")" : "") + '" in /Stream/tv/');
+      if (!match) throw new Error('No show folder for "' + info.title + (info.year ? " (" + info.year + ")" : "") + '" in /tv/');
       showEntries = yield fetchListing2(match.path);
     }
     const seasonFolder = findSeason(showEntries, season);
