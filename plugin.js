@@ -40,10 +40,10 @@ var __async = (__this, __arguments, generator) => {
   });
 };
 
-// dropbox-stream/core.js
+// core.js
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 var TMDB_BASE = "https://api.themoviedb.org/3";
-var INDEX_URL = "https://dropbox-index.rumble2620.workers.dev";
+var INDEX_URL = "https://db-index.gdrive3523.workers.dev";
 var PLAYBACK_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   "Accept": "video/*,*/*;q=0.8",
@@ -311,9 +311,9 @@ function resolveMovie(id, fetchListing2, makeStream2) {
       }
     } catch (e) {
     }
-    const folders = yield fetchListing2("/Movies/");
+    const folders = yield fetchListing2("/Stream/movie/");
     const match = findFolder(folders, info.title, info.year);
-    if (!match) throw new Error("No folder match for " + label + " in /Movies/");
+    if (!match) throw new Error("No folder match for " + label + " in /Stream/movie/");
     const files = yield fetchListing2(match.path);
     const videoFiles = files.filter((f) => !f.isFolder && isVideo(f.name));
     if (!videoFiles.length) throw new Error('No video files in "' + match.path + '"');
@@ -338,9 +338,9 @@ function resolveSeries(id, season, episode, fetchListing2, makeStream2) {
     } catch (e) {
     }
     if (!showEntries) {
-      const folders = yield fetchListing2("/Shows/");
+      const folders = yield fetchListing2("/Stream/tv/");
       const match = findFolder(folders, info.title, info.year);
-      if (!match) throw new Error('No show folder for "' + info.title + (info.year ? " (" + info.year + ")" : "") + '" in /Shows/');
+      if (!match) throw new Error('No show folder for "' + info.title + (info.year ? " (" + info.year + ")" : "") + '" in /Stream/tv/');
       showEntries = yield fetchListing2(match.path);
     }
     const seasonFolder = findSeason(showEntries, season);
@@ -366,7 +366,7 @@ function resolveSeries(id, season, episode, fetchListing2, makeStream2) {
   });
 }
 
-// dropbox-stream/plugin.js
+// plugin.js
 function fetchListing(path) {
   return __async(this, null, function* () {
     const resp = yield fetch(INDEX_URL + "/api" + path);
