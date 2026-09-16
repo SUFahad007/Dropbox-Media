@@ -95,7 +95,7 @@ function parseMetadata(filename, sizeBytes) {
   const name = filename.toLowerCase();
   const ext = ((_a = (filename.match(/\.([a-z0-9]+)$/i) || [])[1]) == null ? void 0 : _a.toLowerCase()) || "";
   let quality = "Unknown";
-  if (/2160p|4k|uhd/.test(name)) quality = "4K";
+  if (/2160p|\b4k\b|\buhd\b/.test(name)) quality = "4K";
   else if (/1080p|fhd/.test(name)) quality = "1080p";
   else if (/720p|hd/.test(name)) quality = "720p";
   else if (/480p|sd/.test(name)) quality = "480p";
@@ -346,8 +346,8 @@ function resolveSeries(id, season, episode, fetchListing2, makeStream2) {
     const seasonFolder = findSeason(showEntries, season);
     const eps = seasonFolder ? yield fetchListing2(seasonFolder.path) : showEntries;
     let streams = eps.filter((f) => !f.isFolder && isVideo(f.name) && matchEp(f.name, season, episode)).map((f) => makeStream2(f, findSubtitles(eps, f.name)));
-    if (streams.length === 0 && !seasonFolder) {
-      const subfolders = showEntries.filter((e) => e.isFolder);
+    if (streams.length === 0) {
+      const subfolders = eps.filter((e) => e.isFolder);
       const results = yield Promise.allSettled(
         subfolders.map((entry) => fetchListing2(entry.path))
       );
