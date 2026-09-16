@@ -392,13 +392,6 @@ function makeStream(file, subtitles) {
     }
   };
 }
-function errorStream(message) {
-  return {
-    name: "Dropbox",
-    title: "\u26A0\uFE0F " + message,
-    externalUrl: INDEX_URL + "/"
-  };
-}
 var addon_default = {
   async fetch(request, env) {
     if (env && env.INDEX && !globalThis.__indexBound) {
@@ -455,7 +448,7 @@ var addon_default = {
         );
       } catch (e) {
         return new Response(
-          JSON.stringify({ streams: [errorStream(e.message)] }),
+          JSON.stringify({ streams: [] }),
           { headers: { ...cors, "Content-Type": "application/json" } }
         );
       }
@@ -471,7 +464,7 @@ var addon_default = {
         );
       } catch (e) {
         return new Response(
-          JSON.stringify({ streams: [errorStream(e.message)] }),
+          JSON.stringify({ streams: [] }),
           { headers: { ...cors, "Content-Type": "application/json" } }
         );
       }
