@@ -8,10 +8,10 @@
  * Binding: KV namespace "DROPBOX_CACHE"  ·  Cron trigger: every 5 minutes
  *
  * URL paths map directly to Dropbox paths:
- *   /Stream/movie/                    → folder listing (HTML)
- *   /api/Stream/movie/                → folder listing (JSON, for scraper/addon)
+ *   /movie/                           → folder listing (HTML)
+ *   /api/movie/                       → folder listing (JSON, for scraper/addon)
  *   /api/search?q=Title&type=movie|tv&year=2010 → title search
- *   /Stream/movie/file.mkv            → stream/download (Range supported)
+ *   /movie/file.mkv                   → stream/download (Range supported)
  *
  * Architecture: edge cache → memory → KV → Dropbox API (SWR at every layer),
  * temp links pre-warmed after folder views and by the 5-minute cron.
@@ -31,14 +31,20 @@ const TTL = { token: 12600, folderFresh: 30, folderStore: 3600, link: 14400 };
 const PREWARM_LIMIT = 20; // max temp links to pre-fetch per folder view
 
 // Folders the scraper always hits first — pre-warmed by cron (URL vocabulary)
-const SCRAPER_ROOTS = ["", "Stream/movie", "Stream/tv"];
+const SCRAPER_ROOTS = ["", "movie", "tv"];
 
 // ── Path mapping: URL paths map directly to Dropbox paths ──
-function dbResolve(dbPath) {   // path for Dropbox API calls
-  return dbPath ? "/" + dbPath : "";
+// DROPBOX_ROOT (secret) prefixes every URL path when talking to Dropbox.
+// Live setting: "Stream" — URL /movie/ maps to Dropbox /Stream/movie/.
+// Cache keys use the RESOLVED path, so changing the root remaps cleanly.
+function dbResolve(env, dbPath) {   // path for Dropbox API calls
+  const root = (env.DROPBOX_ROOT || "").replace(/^\/+|\/+$/g, "");
+  const p = (dbPath || "").replace(/^\/+|\/+$/g, "");
+  const full = root ? root + (p ? "/" + p : "") : p;
+  return full ? "/" + full : "";
 }
-function dbKey(dbPath) {       // cache key
-  return dbPath || "/";
+function dbKey(env, dbPath) {       // cache key (resolved path)
+  return dbResolve(env, dbPath) || "/";
 }
 
 // ── Media detection ──
@@ -149,7 +155,7 @@ export default {
 
 async function handleSearch(env, url, ctx) {
   const q = url.searchParams.get("q") || "";
-  const type = url.searchParams.get("type") || "movie"; // movie → Stream/movie/, tv → Stream/tv/
+  const type = url.searchParams.get("type") || "movie"; // movie → /movie/, tv → /tv/ (DROPBOX_ROOT prefixes all paths)
   const year = parseInt(url.searchParams.get("year")) || null;
 
   if (!q) {
@@ -159,7 +165,7 @@ async function handleSearch(env, url, ctx) {
     });
   }
 
-  const rootFolder = type === "tv" || type === "series" ? "Stream/tv" : "Stream/movie";
+  const rootFolder = type === "tv" || type === "series" ? "tv" : "movie";
   const entries = await listFolder(env, rootFolder, ctx);
   const folders = entries.filter(e => e[".tag"] === "folder");
 
@@ -309,7 +315,7 @@ async function getToken(env) {
 
 async function getTempLink(env, dbPath) {
   const freshMs = TTL.link * 1000;
-  const k = dbKey(dbPath);
+  const k = dbKey(env, dbPath);
 
   const mem = memGet(memLinks, k, freshMs);
   if (mem) return mem.data;
@@ -321,7 +327,7 @@ async function getTempLink(env, dbPath) {
   const res = await fetch(API.tempLink, {
     method: "POST",
     headers: { Authorization: `Bearer ${await getToken(env)}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ path: dbResolve(dbPath) }),
+    body: JSON.stringify({ path: dbResolve(env, dbPath) }),
   });
   if (!res.ok) throw new Error(`Temp link failed (${res.status}): ${await res.text()}`);
 
@@ -344,7 +350,7 @@ async function prewarmLinks(env, entries, dbPath) {
 // ── Folder listing: memory → KV → Dropbox (SWR at every layer) ──
 
 async function listFolder(env, dbPath, ctx) {
-  const key = `folder:${dbKey(dbPath)}`;
+  const key = `folder:${dbKey(env, dbPath)}`;
   const freshMs = TTL.folderFresh * 1000;
 
   const mem = memGet(memFolders, key, freshMs);
@@ -372,7 +378,7 @@ async function fetchAndCacheFolder(env, dbPath, key) {
   while (hasMore) {
     const url = cursor ? API.listMore : API.list;
     const body = cursor ? JSON.stringify({ cursor }) : JSON.stringify({
-      path: dbResolve(dbPath), include_deleted: false, include_mounted_folders: true,
+      path: dbResolve(env, dbPath), include_deleted: false, include_mounted_folders: true,
     });
     const res = await fetch(url, {
       method: "POST",
@@ -412,8 +418,8 @@ async function handleFile(env, request, dbPath) {
 
   // Retry once if temp link expired
   if (res.status === 401 || res.status === 403 || res.status === 404) {
-    await env.DROPBOX_CACHE.delete(`link:${dbKey(dbPath)}`);
-    memLinks.delete(dbKey(dbPath));
+    await env.DROPBOX_CACHE.delete(`link:${dbKey(env, dbPath)}`);
+    memLinks.delete(dbKey(env, dbPath));
     const link2 = await getTempLink(env, dbPath);
     res = await fetch(link2, { headers: range ? { Range: range } : {} });
   }
@@ -493,7 +499,7 @@ async function prewarm(env) {
     await getToken(env);
     // Pre-warm all scraper entry points in parallel
     const allEntries = await Promise.all(
-      SCRAPER_ROOTS.map(r => fetchAndCacheFolder(env, r, `folder:${dbKey(r)}`))
+      SCRAPER_ROOTS.map(r => fetchAndCacheFolder(env, r, `folder:${dbKey(env, r)}`))
     );
     // Pre-warm temp links for root folder files
     await prewarmLinks(env, allEntries[0], "");
