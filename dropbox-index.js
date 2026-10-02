@@ -44,8 +44,6 @@ function dbKey(env, dbPath) {       // cache key (resolved path)
 
 // ── Media detection ──
 
-const MEDIA = new Set(["mp4","mkv","webm","avi","mov","m4v","ogv","mp3","wav","flac","ogg","m4a","aac","weba","opus","ts","m3u8","mpd"]);
-
 const MIME = {
   mp4:"video/mp4", mkv:"video/x-matroska", webm:"video/webm", avi:"video/x-msvideo",
   mov:"video/quicktime", m4v:"video/x-m4v", ogv:"video/ogg", ts:"video/mp2t",
@@ -55,7 +53,6 @@ const MIME = {
 };
 
 const ext = f => f.split(".").pop().toLowerCase();
-const isMedia = f => MEDIA.has(ext(f));
 const mimeType = f => MIME[ext(f)] || "application/octet-stream";
 
 // ── Module-level caches (persist across requests in same isolate) ──
@@ -66,8 +63,7 @@ const memLinks = new Map();    // path → { data, ts } — max 64
 
 function memGet(map, key, freshMs) {
   const v = map.get(key);
-  if (!v) return null;
-  return { data: v.data, stale: Date.now() - v.ts > freshMs };
+  return (!v || Date.now() - v.ts > freshMs) ? null : v.data;
 }
 
 function memSet(map, key, data, max) {
@@ -100,7 +96,6 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = decodeURIComponent(url.pathname);
-    if (path === "/favicon.ico") return new Response(null, { status: 204 });
 
     try {
       // /api/search?q=Title&type=movie|tv → search folders, return match + files
@@ -198,7 +193,6 @@ async function handleSearch(env, url, ctx) {
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "public, s-maxage=30, stale-while-revalidate=300",
       },
     });
   }
@@ -221,9 +215,6 @@ async function handleSearch(env, url, ctx) {
           name: e.name,
           path: dir ? `/${full}/` : `/${full}`,
           size: (!dir && e.size != null) ? e.size : 0,
-          sizeHuman: (!dir && e.size != null) ? fmtSize(e.size) : "",
-          modified: e.client_modified || e.server_modified || "",
-          mimeType: dir ? "application/x-directory" : mimeType(e.name),
           isFolder: dir,
         };
       }),
@@ -234,13 +225,12 @@ async function handleSearch(env, url, ctx) {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
-      "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
     },
   });
 }
 
 // ── JSON API for scraper/addon ──
-// Returns { path, entries: [{ name, path, size, sizeBytes, modified, mimeType, isFolder }] }
+// Returns { path, entries: [{ name, path, size, isFolder }] }
 
 async function handleApi(env, dbPath, ctx) {
   const entries = await listFolder(env, dbPath, ctx);
@@ -254,9 +244,6 @@ async function handleApi(env, dbPath, ctx) {
         name: e.name,
         path: dir ? `/${full}/` : `/${full}`,
         size: (!dir && e.size != null) ? fmtSize(e.size) : "",
-        sizeBytes: (!dir && e.size != null) ? e.size : 0,
-        modified: e.client_modified || e.server_modified || "",
-        mimeType: dir ? "application/x-directory" : mimeType(e.name),
         isFolder: dir,
       };
     }),
@@ -266,8 +253,6 @@ async function handleApi(env, dbPath, ctx) {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
-      // Longer cache for API — scraper doesn't need fresh data as often
-      "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
     },
   });
 }
@@ -296,7 +281,7 @@ async function getTempLink(env, dbPath) {
   const k = dbKey(env, dbPath);
 
   const mem = memGet(memLinks, k, freshMs);
-  if (mem) return mem.data;
+  if (mem) return mem;
 
   const res = await fetch(API.tempLink, {
     method: "POST",
@@ -317,7 +302,7 @@ async function listFolder(env, dbPath, ctx) {
   const freshMs = TTL.folderFresh * 1000;
 
   const mem = memGet(memFolders, key, freshMs);
-  if (mem) return mem.data;
+  if (mem) return mem;
 
   return fetchFolder(env, dbPath);
 }
