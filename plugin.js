@@ -363,6 +363,14 @@ function fetchListing(path) {
     return data.entries || [];
   });
 }
+function sizeToBytes(size) {
+  if (size == null) return void 0;
+  if (typeof size === "number") return Math.round(size);
+  const m = String(size).trim().match(/^([\d.]+)\s*(B|KB|MB|GB|TB)$/i);
+  if (!m) return void 0;
+  const mult = { B: 1, KB: 1024, MB: 1048576, GB: 1073741824, TB: 1099511627776 }[m[2].toUpperCase()];
+  return Math.round(parseFloat(m[1]) * mult);
+}
 function makeStream(file, subtitles) {
   const meta = parseMetadata(file.name, file.size);
   return __spreadProps(__spreadValues({
@@ -374,6 +382,9 @@ function makeStream(file, subtitles) {
     // in toStreamItem — a blank field is dropped, so the line collapses to just the
     // size. That gives us exactly: bold filename + size, nothing else.
     size: file.size != null ? formatSize(file.size) : void 0,
+    // Experiment: numeric bytes too, in case Nuvio's Fusion-Style size badge
+    // (the pill shown for Addon-sourced streams) looks for a numeric field here
+    sizeBytes: sizeToBytes(file.size),
     // Nuvio shows this raw — must be pretty
     format: meta.format,
     headers: PLAYBACK_HEADERS
