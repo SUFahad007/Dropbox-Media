@@ -174,15 +174,8 @@ function formatSize(size) {
   return Number.isFinite(n) ? humanSize(n) : s;
 }
 function buildStreamTitle(meta, fileSize) {
-  const parts = [];
-  if (meta.quality && meta.quality !== "Unknown") parts.push(meta.quality);
-  if (meta.source) parts.push(meta.source);
-  if (meta.hdr) parts.push(meta.hdr);
-  if (meta.audio) parts.push(meta.audio);
-  if (meta.codec) parts.push(meta.codec);
-  const metaStr = parts.length ? " \xB7 " + parts.join(" \xB7 ") : "";
-  const sizeStr = fileSize ? " \xB7 " + (typeof fileSize === "number" ? humanSize(fileSize) : fileSize) : "";
-  return metaStr + sizeStr;
+  // filename + size only — no parsed quality/source/codec parts
+  return fileSize ? " \xB7 " + (typeof fileSize === "number" ? humanSize(fileSize) : fileSize) : "";
 }
 function tmdbTitle(id, type) {
   return __async(this, null, function* () {
