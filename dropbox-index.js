@@ -4,8 +4,8 @@
  * Minimal, text-first directory index for a Dropbox media library:
  * HTML browsing, JSON API, title search, and Range-supported streaming.
  *
- * Secrets: DROPBOX_APP_KEY / DROPBOX_APP_SECRET / DROPBOX_REFRESH_TOKEN
- * Binding: KV namespace "DROPBOX_CACHE"  ·  Cron trigger: every 5 minutes
+ * Secrets: DROPBOX_APP_KEY / DROPBOX_APP_SECRET / DROPBOX_REFRESH_TOKEN / DROPBOX_ROOT
+ * No bindings, no KV, no cron — direct Dropbox API calls per request.
  *
  * URL paths map directly to Dropbox paths:
  *   /movie/                           → folder listing (HTML)
@@ -13,8 +13,7 @@
  *   /api/search?q=Title&type=movie|tv&year=2010 → title search
  *   /movie/file.mkv                   → stream/download (Range supported)
  *
- * Architecture: edge cache → memory → KV → Dropbox API (SWR at every layer),
- * temp links pre-warmed after folder views and by the 5-minute cron.
+ * Architecture: small in-memory caches (token, folders, links) → Dropbox API.
  */
 
 // ── Dropbox API endpoints ──
@@ -27,11 +26,7 @@ const API = {
 };
 
 // TTLs (seconds)
-const TTL = { token: 12600, folderFresh: 30, folderStore: 3600, link: 14400 };
-const PREWARM_LIMIT = 20; // max temp links to pre-fetch per folder view
-
-// Folders the scraper always hits first — pre-warmed by cron (URL vocabulary)
-const SCRAPER_ROOTS = ["", "movie", "tv"];
+const TTL = { token: 12600, folderFresh: 30, link: 14400 };
 
 // ── Path mapping: URL paths map directly to Dropbox paths ──
 // DROPBOX_ROOT (secret) prefixes every URL path when talking to Dropbox.
@@ -142,10 +137,6 @@ export default {
     }
   },
 
-  // Pre-warm: cron fires every 5 min, keeps root + scraper folders + temp links hot
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil(prewarm(env));
-  },
 };
 
 // ── Search API: find folder by title, return folder + files in one response ──
@@ -290,13 +281,10 @@ async function handleApi(env, dbPath, ctx) {
   });
 }
 
-// ── Access token: memory → KV → refresh ──
+// ── Access token: memory → refresh ──
 
 async function getToken(env) {
   if (token && Date.now() < tokenExp) return token;
-
-  const kv = await env.DROPBOX_CACHE.get("access_token");
-  if (kv) { token = kv; tokenExp = Date.now() + TTL.token * 1000; return kv; }
 
   const res = await fetch(API.token, {
     method: "POST",
@@ -307,11 +295,10 @@ async function getToken(env) {
 
   token = (await res.json()).access_token;
   tokenExp = Date.now() + TTL.token * 1000;
-  await env.DROPBOX_CACHE.put("access_token", token, { expirationTtl: TTL.token });
   return token;
 }
 
-// ── Temp link: memory → KV → fetch (used for ALL downloads) ──
+// ── Temp link: memory → fetch (used for ALL downloads) ──
 
 async function getTempLink(env, dbPath) {
   const freshMs = TTL.link * 1000;
@@ -319,10 +306,6 @@ async function getTempLink(env, dbPath) {
 
   const mem = memGet(memLinks, k, freshMs);
   if (mem) return mem.data;
-
-  const key = `link:${k}`;
-  const kv = await env.DROPBOX_CACHE.get(key);
-  if (kv) { memSet(memLinks, k, kv, 64); return kv; }
 
   const res = await fetch(API.tempLink, {
     method: "POST",
@@ -332,46 +315,23 @@ async function getTempLink(env, dbPath) {
   if (!res.ok) throw new Error(`Temp link failed (${res.status}): ${await res.text()}`);
 
   const link = (await res.json()).link;
-  await env.DROPBOX_CACHE.put(key, link, { expirationTtl: TTL.link });
   memSet(memLinks, k, link, 64);
   return link;
 }
 
-// ── Pre-warm temp links: batch fetch in background after folder render ──
-
-async function prewarmLinks(env, entries, dbPath) {
-  const files = entries.filter(e => e[".tag"] === "file").slice(0, PREWARM_LIMIT);
-  await Promise.all(files.map(async e => {
-    const full = dbPath ? `${dbPath}/${e.name}` : e.name;
-    try { await getTempLink(env, full); } catch (_) {}   // getTempLink checks mem freshness itself
-  }));
-}
-
-// ── Folder listing: memory → KV → Dropbox (SWR at every layer) ──
+// ── Folder listing: memory → Dropbox ──
 
 async function listFolder(env, dbPath, ctx) {
   const key = `folder:${dbKey(env, dbPath)}`;
   const freshMs = TTL.folderFresh * 1000;
 
   const mem = memGet(memFolders, key, freshMs);
-  if (mem) {
-    if (mem.stale) ctx.waitUntil(fetchAndCacheFolder(env, dbPath, key));
-    return mem.data;
-  }
+  if (mem) return mem.data;
 
-  const raw = await env.DROPBOX_CACHE.get(key, "json");
-  if (raw) {
-    memSet(memFolders, key, raw.entries, 16);
-    if (Date.now() - raw.ts > freshMs) {
-      ctx.waitUntil(fetchAndCacheFolder(env, dbPath, key));
-    }
-    return raw.entries;
-  }
-
-  return fetchAndCacheFolder(env, dbPath, key);
+  return fetchFolder(env, dbPath);
 }
 
-async function fetchAndCacheFolder(env, dbPath, key) {
+async function fetchFolder(env, dbPath) {
   const t = await getToken(env);
   let entries = [], hasMore = true, cursor = null;
 
@@ -399,8 +359,7 @@ async function fetchAndCacheFolder(env, dbPath, key) {
     a[".tag"] !== b[".tag"] ? (a[".tag"] === "folder" ? -1 : 1) : a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
   );
 
-  await env.DROPBOX_CACHE.put(key, JSON.stringify({ entries, ts: Date.now() }), { expirationTtl: TTL.folderStore });
-  memSet(memFolders, key, entries, 16);
+  memSet(memFolders, `folder:${dbKey(env, dbPath)}`, entries, 16);
   return entries;
 }
 
@@ -418,7 +377,6 @@ async function handleFile(env, request, dbPath) {
 
   // Retry once if temp link expired
   if (res.status === 401 || res.status === 403 || res.status === 404) {
-    await env.DROPBOX_CACHE.delete(`link:${dbKey(env, dbPath)}`);
     memLinks.delete(dbKey(env, dbPath));
     const link2 = await getTempLink(env, dbPath);
     res = await fetch(link2, { headers: range ? { Range: range } : {} });
@@ -462,24 +420,21 @@ async function renderListing(env, dbPath, ctx) {
     return `  <tr><td><a href="${href}">${esc(dir ? e.name + "/" : e.name)}</a></td><td style="text-align:right">${size}</td></tr>`;
   }).join("\n");
 
-  // Pre-warm temp links in background — by the time user clicks, link is cached
-  ctx.waitUntil(prewarmLinks(env, entries, dbPath));
-
   return new Response(`<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Index of ${esc(display)}</title>
 <style>
-  body{background:#0D0D0D;color:#E0E0E0;font-family:"Times New Roman",Times,serif;margin:40px auto;max-width:800px;padding:0 24px;line-height:1.5;font-weight:bold}
+  body{background:#FFFFFF;color:#000000;font-family:"Times New Roman",Times,serif;margin:40px auto;max-width:800px;padding:0 24px;line-height:1.5;font-weight:bold}
   h1{font-size:22px;font-weight:bold;margin:0 0 20px}
-  hr{border:none;border-top:1px solid #333;margin:0 0 4px}
-  table{font-family:monospace;font-size:14px;border-collapse:collapse;width:100%}
-  td{padding:6px 12px 6px 0;vertical-align:top;border-bottom:1px solid #222}
-  td:last-child{white-space:nowrap;text-align:right;color:#888;font-weight:normal}
+  hr{border:none;border-top:1px solid #000;margin:0 0 4px}
+  table{font-family:"Courier New",Courier,monospace;font-size:14px;border-collapse:collapse;width:100%}
+  td{padding:6px 12px 6px 0;vertical-align:top;border-bottom:1px solid #DDD}
+  td:last-child{white-space:nowrap;text-align:right;font-weight:bold}
   tr:last-child td{border-bottom:none}
-  a{color:#7AA2F7;text-decoration:underline}
-  a:visited{color:#B294BB}
-  .up td{border-bottom:1px solid #333;padding-bottom:10px}
+  a{color:#000000;text-decoration:underline}
+  a:visited{color:#000000}
+  .up td{border-bottom:1px solid #000;padding-bottom:10px}
   @media(max-width:600px){body{margin:24px auto}h1{font-size:18px}table{font-size:13px}}
 </style>
 </head><body>
@@ -487,23 +442,9 @@ async function renderListing(env, dbPath, ctx) {
 <hr>
 <table><tbody>
 ${parent}
-${rows || '<tr><td style="color:#666;font-weight:normal">Empty folder</td><td></td></tr>'}
+${rows || '<tr><td style="color:#000">Empty folder</td><td></td></tr>'}
 </tbody></table>
 </body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } });
-}
-
-// ── Pre-warm: root + scraper folders + temp links, all kept hot ──
-
-async function prewarm(env) {
-  try {
-    await getToken(env);
-    // Pre-warm all scraper entry points in parallel
-    const allEntries = await Promise.all(
-      SCRAPER_ROOTS.map(r => fetchAndCacheFolder(env, r, `folder:${dbKey(env, r)}`))
-    );
-    // Pre-warm temp links for root folder files
-    await prewarmLinks(env, allEntries[0], "");
-  } catch (_) {}
 }
 
 // ── Utils ──
