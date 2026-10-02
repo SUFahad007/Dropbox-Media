@@ -383,8 +383,8 @@ function makeStream(file, subtitles) {
     ...subtitles && subtitles.length ? { subtitles } : {},
     // Stremio spec: top-level
     behaviorHints: {
-      notWebReady: true,
-      // library is HEVC/DTS — browser decoders can't play it; hide from Stremio Web
+      // notWebReady: true would hide streams in Stremio Web entirely —
+      // left off so web lists them; playback hands off to an external player
       proxyHeaders: { request: PLAYBACK_HEADERS },
       // Exact data for AIOStreams Custom Formatter ({stream.filename} / {stream.size})
       filename: file.name,
