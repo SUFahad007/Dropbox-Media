@@ -1,14 +1,14 @@
 /**
  * Dropbox Index — Cloudflare Worker (v2.0.0)
  *
- * Minimal, text-first directory index for a Dropbox media library:
- * HTML browsing, JSON API, title search, and Range-supported streaming.
+ * Minimal JSON-only index for a Dropbox media library:
+ * folder listings, title search, and Range-supported streaming.
  *
  * Secrets: DROPBOX_APP_KEY / DROPBOX_APP_SECRET / DROPBOX_REFRESH_TOKEN / DROPBOX_ROOT
  * No bindings, no KV, no cron — direct Dropbox API calls per request.
  *
  * URL paths map directly to Dropbox paths:
- *   /movie/                           → folder listing (HTML)
+ *   /movie/                           → redirects to /api/movie/ (JSON listing)
  *   /api/movie/                       → folder listing (JSON, for scraper/addon)
  *   /api/search?q=Title&type=movie|tv&year=2010 → title search
  *   /movie/file.mkv                   → stream/download (Range supported)
@@ -118,17 +118,8 @@ export default {
       const dbPath = path.replace(/^\/+/, "").replace(/\/+$/, "");
 
       if (isDir) {
-        // Layer 1: Edge cache — 60s fresh, 10 min SWR (zero worker exec on hit)
-        const cache = caches.default;
-        const key = new Request(request.url, { method: "GET" });
-        let res = await cache.match(key);
-        if (res) return res;
-
-        res = await renderListing(env, dbPath, ctx);
-        const cached = new Response(res.body, res);
-        cached.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=600");
-        ctx.waitUntil(cache.put(key, cached.clone()));
-        return cached;
+        // No HTML UI — directory URLs redirect to the JSON listing
+        return Response.redirect(new URL("/api/" + dbPath, url).toString(), 301);
       }
 
       return handleFile(env, request, dbPath);
@@ -399,52 +390,13 @@ async function handleFile(env, request, dbPath) {
   return new Response(res.body, { status: res.status, headers: out });
 }
 
-// ── Render directory listing (HTML for humans) ──
+// ── Error handling (plain text, no UI) ──
 
-async function renderListing(env, dbPath, ctx) {
-  const entries = await listFolder(env, dbPath, ctx);
-  const display = dbPath ? `/${dbPath}/` : "/";
-  const parts = dbPath ? dbPath.split("/") : [];
-
-  let parent = "";
-  if (parts.length) {
-    const up = parts.slice(0, -1).join("/");
-    parent = `<tr class="up"><td><a href="${up ? `/${up}/` : "/"}">../</a></td><td></td></tr>`;
-  }
-
-  const rows = entries.map(e => {
-    const dir = e[".tag"] === "folder";
-    const full = dbPath ? `${dbPath}/${e.name}` : e.name;
-    const href = dir ? `/${full}/` : `/${full}`;
-    const size = (!dir && e.size != null) ? fmtSize(e.size) : "—";
-    return `  <tr><td><a href="${href}">${esc(dir ? e.name + "/" : e.name)}</a></td><td style="text-align:right">${size}</td></tr>`;
-  }).join("\n");
-
-  return new Response(`<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Index of ${esc(display)}</title>
-<style>
-  body{background:#FFFFFF;color:#000000;font-family:"Times New Roman",Times,serif;margin:40px auto;max-width:800px;padding:0 24px;line-height:1.5;font-weight:bold}
-  h1{font-size:22px;font-weight:bold;margin:0 0 20px}
-  hr{border:none;border-top:1px solid #000;margin:0 0 4px}
-  table{font-family:"Courier New",Courier,monospace;font-size:14px;border-collapse:collapse;width:100%}
-  td{padding:6px 12px 6px 0;vertical-align:top;border-bottom:1px solid #DDD}
-  td:last-child{white-space:nowrap;text-align:right;font-weight:bold}
-  tr:last-child td{border-bottom:none}
-  a{color:#000000;text-decoration:underline}
-  a:visited{color:#000000}
-  .up td{border-bottom:1px solid #000;padding-bottom:10px}
-  @media(max-width:600px){body{margin:24px auto}h1{font-size:18px}table{font-size:13px}}
-</style>
-</head><body>
-<h1>Index of ${esc(display)}</h1>
-<hr>
-<table><tbody>
-${parent}
-${rows || '<tr><td style="color:#000">Empty folder</td><td></td></tr>'}
-</tbody></table>
-</body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+function errorPage(err) {
+  return new Response(err.message || String(err), {
+    status: 500,
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" },
+  });
 }
 
 // ── Utils ──
@@ -454,23 +406,4 @@ function fmtSize(b) {
   if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
   if (b < 1073741824) return (b / 1048576).toFixed(1) + " MB";
   return (b / 1073741824).toFixed(1) + " GB";
-}
-
-function esc(s) {
-  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
-}
-
-function errorPage(err) {
-  return new Response(`<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Error</title>
-<style>
-  body{background:#0D0D0D;color:#E0E0E0;font-family:"Times New Roman",Times,serif;margin:40px auto;max-width:800px;padding:0 24px}
-  h1{font-size:22px;font-weight:bold}pre{font-family:monospace;font-size:14px;white-space:pre-wrap}
-  a{color:#7AA2F7}hr{border:none;border-top:1px solid #333}
-</style>
-</head><body>
-<h1>Error</h1><hr><pre>${esc(err.message || err)}</pre><hr><a href="/">Back to index</a>
-</body></html>`, { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
