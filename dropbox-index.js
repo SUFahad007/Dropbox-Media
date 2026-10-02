@@ -138,7 +138,7 @@ async function handleSearch(env, url, ctx) {
   if (!q) {
     return new Response(JSON.stringify({ error: "Missing q parameter" }), {
       status: 400,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+      headers: { "Content-Type": "application/json" },
     });
   }
 
@@ -190,10 +190,7 @@ async function handleSearch(env, url, ctx) {
 
   if (!match) {
     return new Response(JSON.stringify({ query: q, type, results: [] }), {
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "Access-Control-Allow-Origin": "*",
-      },
+      headers: { "Content-Type": "application/json; charset=utf-8" },
     });
   }
 
@@ -222,10 +219,7 @@ async function handleSearch(env, url, ctx) {
   });
 
   return new Response(json, {
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
-    },
+    headers: { "Content-Type": "application/json; charset=utf-8" },
   });
 }
 
@@ -250,10 +244,7 @@ async function handleApi(env, dbPath, ctx) {
   });
 
   return new Response(json, {
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
-    },
+    headers: { "Content-Type": "application/json; charset=utf-8" },
   });
 }
 
@@ -363,9 +354,6 @@ async function handleFile(env, request, dbPath) {
     "Content-Disposition": `attachment; filename="${name.replace(/"/g, "_")}"`,
     "Accept-Ranges": "bytes",
     "Cache-Control": "public, max-age=3600",
-    // CORS: lets Stremio Web / browser players fetch media directly
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length",
   };
   const cl = res.headers.get("Content-Length");
   if (cl) out["Content-Length"] = cl;
@@ -380,7 +368,7 @@ async function handleFile(env, request, dbPath) {
 function errorPage(err) {
   return new Response(err.message || String(err), {
     status: 500,
-    headers: { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" },
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
   });
 }
 
