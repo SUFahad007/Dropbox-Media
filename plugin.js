@@ -173,10 +173,6 @@ function formatSize(size) {
   const n = parseFloat(s);
   return Number.isFinite(n) ? humanSize(n) : s;
 }
-function buildStreamTitle(meta, fileSize) {
-  // filename + size only — no parsed quality/source/codec parts
-  return fileSize ? " \xB7 " + (typeof fileSize === "number" ? humanSize(fileSize) : fileSize) : "";
-}
 function tmdbTitle(id, type) {
   return __async(this, null, function* () {
     var _a, _b;
@@ -371,8 +367,8 @@ function makeStream(file, subtitles) {
   const meta = parseMetadata(file.name, file.size);
   return __spreadProps(__spreadValues({
     name: file.name,
-    // Nuvio: name = name ?: title → bold line = full filename
-    title: file.name + buildStreamTitle(meta, file.size),
+    // Nuvio: bold line = full filename; size shows via the Size badge (top-level `size`)
+    title: file.name,
     url: streamUrl(file.path),
     // No `quality` sent: Nuvio hardcodes the card line as `quality • size • language`
     // in toStreamItem — a blank field is dropped, so the line collapses to just the
