@@ -311,6 +311,31 @@ function resolveMovie(id, fetchListing2, makeStream2) {
     return videoFiles.map((f) => makeStream2(f, subs));
   });
 }
+function collectEpisodeStreams(lists, season, episode, fetchListing2, makeStream2, skipPaths, depth) {
+  return __async(this, null, function* () {
+    depth = depth || 0;
+    // walk every folder level (max depth 3), collecting ALL episode matches
+    const streams = [];
+    const toScan = [];
+    const seen = new Set(skipPaths || []);
+    for (const list of lists) {
+      for (const e of list) {
+        if (e.isFolder) {
+          if (!seen.has(e.path)) { seen.add(e.path); toScan.push(e); }
+        } else if (isVideo(e.name) && matchEp(e.name, season, episode)) {
+          streams.push(makeStream2(e, findSubtitles(list, e.name)));
+        }
+      }
+    }
+    if (depth < 3 && toScan.length) {
+      const results = yield Promise.allSettled(toScan.map((entry) => fetchListing2(entry.path)));
+      const subLists = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
+      const more = yield collectEpisodeStreams(subLists, season, episode, fetchListing2, makeStream2, skipPaths, depth + 1);
+      for (const m of more) streams.push(m);
+    }
+    return streams;
+  });
+}
 function resolveSeries(id, season, episode, fetchListing2, makeStream2) {
   return __async(this, null, function* () {
     const info = yield tmdbTitle(id, "series");
@@ -333,28 +358,12 @@ function resolveSeries(id, season, episode, fetchListing2, makeStream2) {
       if (!match) throw new Error('No show folder for "' + info.title + (info.year ? " (" + info.year + ")" : "") + '" in /tv/');
       showEntries = yield fetchListing2(match.path);
     }
-  // scan show root + ALL season folders, then ALL subfolders — collect every match
-  const lists = [showEntries];
-  for (const sf of findSeasons(showEntries, season)) lists.push(yield fetchListing2(sf.path));
-  let streams = [];
-  for (const list of lists) {
-    const matched = list.filter((f) => !f.isFolder && isVideo(f.name) && matchEp(f.name, season, episode));
-    for (const f of matched) streams.push(makeStream2(f, findSubtitles(list, f.name)));
-  }
-  if (streams.length === 0) {
-    const seen = /* @__PURE__ */ new Set();
-    const toScan = [];
-    for (const list of lists) for (const e of list) if (e.isFolder && !seen.has(e.path)) { seen.add(e.path); toScan.push(e); }
-    const results = yield Promise.allSettled(
-      toScan.map((entry) => fetchListing2(entry.path))
-    );
-    for (let i = 0; i < results.length; i++) {
-      if (results[i].status !== "fulfilled") continue;
-      const sub = results[i].value;
-      const matched = sub.filter((f) => !f.isFolder && isVideo(f.name) && matchEp(f.name, season, episode));
-      for (const f of matched) streams.push(makeStream2(f, findSubtitles(sub, f.name)));
-    }
-  }
+    // scan show root + ALL season folders, then ALL subfolders recursively - collect every match
+    const seasonFolders = findSeasons(showEntries, season);
+    const skipPaths = seasonFolders.map((s) => s.path);
+    const lists = [showEntries];
+    for (const sf of seasonFolders) lists.push(yield fetchListing2(sf.path));
+    const streams = yield collectEpisodeStreams(lists, season, episode, fetchListing2, makeStream2, skipPaths);
     if (!streams.length) throw new Error("S" + String(season).padStart(2, "0") + "E" + String(episode).padStart(2, "0") + ' not found for "' + info.title + '"');
     return streams;
   });
