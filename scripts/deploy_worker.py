@@ -24,7 +24,8 @@ elif worker == 'db-addon':
 else:
     raise SystemExit(f'unknown worker {worker}')
 
-meta = json.dumps({'main_module': script_file, 'compatibility_date': '2026-09-15', 'bindings': bindings})
+meta = json.dumps({'main_module': script_file, 'compatibility_date': '2026-09-15', 'bindings': bindings,
+                     'observability': {'enabled': True, 'head_sampling_rate': 1.0}})
 code = open(script_file, encoding='utf-8').read()
 b = uuid.uuid4().hex
 body = (
