@@ -21,6 +21,7 @@ development, with the verdict that led to the vendored docs in this repo.
 | [john-nuvio DOCUMENTATION.md](https://git.janisslsm.id.lv/janisslsm/john-nuvio) - gitea copy | rejected: fork of the yoruix guide, older revision; says Hermes engine (outdated - on-device engine is QuickJS) |
 | [NuvioMedia/NuvioTV](https://github.com/NuvioMedia/NuvioTV), [NuvioMobile](https://github.com/NuvioMedia/NuvioMobile), [NuvioDesktop](https://github.com/NuvioMedia/NuvioDesktop) - official app repos | rejected as provider docs: no provider/plugin guide in any of them (docs folders cover app architecture only); useful for release notes and issue reports |
 | [prneut/NuvioMobilePlus](https://github.com/prneut/NuvioMobilePlus) | rejected: NuvioMobilePlus repo, no provider documentation |
+| [nuvio.wiki](https://nuvio.wiki/) - community wiki (haaihond/Nuvio-Wiki) | **best community hub** - installation, addons vs plugins, settings, stream badges, troubleshooting. Its [plugins page](https://nuvio.wiki/integrations/plugins) documents the QuickJS on-device runtime (settles the Hermes claim in the yoruix guide: wrong/outdated), streams-only scope, manifest repo format, and the app-store-vs-sideload plugin restriction. User-focused but the most accurate technical writing on Nuvio found anywhere |
 | Nuvio blog/coverage (nuviosync.com, troypointinsider, geekextreme, scribd PDF overview) | rejected: installation/consumer guides, not development docs |
 
 ## Platform and API reference (used throughout this project)
