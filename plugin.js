@@ -250,16 +250,17 @@ function findFolder(folders, title, year) {
   }
   return best;
 }
-function findSeason(entries, seasonNum) {
+function findSeasons(entries, seasonNum) {
+  // ALL season folders, not just the first — parallel copies (multi-quality) all get read
   const sPad = String(seasonNum).padStart(2, "0");
   const sPlain = String(seasonNum);
+  const found = [];
   for (const e of entries) {
     if (!e.isFolder) continue;
     const t = e.name.toLowerCase();
-    if (["season " + sPad, "season " + sPlain, "s" + sPad, "s" + sPlain].includes(t)) return e;
-    if (t.includes("season") && (t.includes(sPad) || t.includes(" " + sPlain))) return e;
+    if (["season " + sPad, "season " + sPlain, "s" + sPad, "s" + sPlain].includes(t) || (t.includes("season") && (t.includes(sPad) || t.includes(" " + sPlain)))) found.push(e);
   }
-  return null;
+  return found;
 }
 function matchEp(filename, season, episode) {
   const m = String(filename).toUpperCase().match(new RegExp("S0?" + season + "E0?" + episode));
@@ -332,24 +333,28 @@ function resolveSeries(id, season, episode, fetchListing2, makeStream2) {
       if (!match) throw new Error('No show folder for "' + info.title + (info.year ? " (" + info.year + ")" : "") + '" in /tv/');
       showEntries = yield fetchListing2(match.path);
     }
-    const seasonFolder = findSeason(showEntries, season);
-    const eps = seasonFolder ? yield fetchListing2(seasonFolder.path) : showEntries;
-    let streams = eps.filter((f) => !f.isFolder && isVideo(f.name) && matchEp(f.name, season, episode)).map((f) => makeStream2(f, findSubtitles(eps, f.name)));
-    if (streams.length === 0) {
-      const subfolders = eps.filter((e) => e.isFolder);
-      const results = yield Promise.allSettled(
-        subfolders.map((entry) => fetchListing2(entry.path))
-      );
-      for (let i = 0; i < results.length; i++) {
-        if (results[i].status !== "fulfilled") continue;
-        const sub = results[i].value;
-        const matched = sub.filter((f) => !f.isFolder && isVideo(f.name) && matchEp(f.name, season, episode));
-        if (matched.length) {
-          streams = matched.map((f) => makeStream2(f, findSubtitles(sub, f.name)));
-          break;
-        }
-      }
+  // scan show root + ALL season folders, then ALL subfolders — collect every match
+  const lists = [showEntries];
+  for (const sf of findSeasons(showEntries, season)) lists.push(yield fetchListing2(sf.path));
+  let streams = [];
+  for (const list of lists) {
+    const matched = list.filter((f) => !f.isFolder && isVideo(f.name) && matchEp(f.name, season, episode));
+    for (const f of matched) streams.push(makeStream2(f, findSubtitles(list, f.name)));
+  }
+  if (streams.length === 0) {
+    const seen = /* @__PURE__ */ new Set();
+    const toScan = [];
+    for (const list of lists) for (const e of list) if (e.isFolder && !seen.has(e.path)) { seen.add(e.path); toScan.push(e); }
+    const results = yield Promise.allSettled(
+      toScan.map((entry) => fetchListing2(entry.path))
+    );
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status !== "fulfilled") continue;
+      const sub = results[i].value;
+      const matched = sub.filter((f) => !f.isFolder && isVideo(f.name) && matchEp(f.name, season, episode));
+      for (const f of matched) streams.push(makeStream2(f, findSubtitles(sub, f.name)));
     }
+  }
     if (!streams.length) throw new Error("S" + String(season).padStart(2, "0") + "E" + String(episode).padStart(2, "0") + ' not found for "' + info.title + '"');
     return streams;
   });
