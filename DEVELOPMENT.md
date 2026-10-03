@@ -51,10 +51,27 @@ Worker-to-worker calls must go through the `INDEX` service binding in `db-addon`
   - supports HTTP Range on stream URLs; playback headers come from the addon
 - Keep the aesthetic minimal: text-first, white background, no URL prefixes.
 
+## CI: push to main deploys both workers
+
+The [Deploy Workers workflow](.github/workflows/deploy.yml) runs on every push
+to `main` (and manually from the Actions tab). It:
+
+1. Syntax-checks `addon.js`, `plugin.js`, `dropbox-index.js`
+2. Regenerates the embedded plugin mirror in `addon.js` from `plugin.js`
+   (scripts/sync_mirror.py) - if the push only changed `plugin.js`, the workflow
+   fixes `addon.js` itself and commits it back with `[skip ci]`
+3. Deploys `dropbox-index.js` -> `db-index` and `addon.js` -> `db-addon`
+   (scripts/deploy_worker.py, Cloudflare API, full bindings declared per worker)
+4. Verifies the live endpoints, including that the served Nuvio plugin is
+   byte-identical to `plugin.js`
+
+Required repo secrets (Settings -> Secrets and variables -> Actions):
+`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `DROPBOX_APP_KEY`,
+`DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`.
+
 ## Making changes
 
 1. Edit `plugin.js` and/or `addon.js` (and `dropbox-index.js` for index changes).
 2. `node --check` every changed file.
-3. Regenerate the embedded mirror in `addon.js` from `plugin.js`.
-4. Sync to GitHub and deploy both workers.
-5. Verify against a real show/movie on-device - server-side curl is not enough.
+3. Push to `main` - CI handles the mirror, deploys both workers, verifies.
+4. Verify against a real show/movie on-device - server-side curl is not enough.
