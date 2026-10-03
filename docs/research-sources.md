@@ -24,6 +24,19 @@ development, with the verdict that led to the vendored docs in this repo.
 | [nuvio.wiki](https://nuvio.wiki/) - community wiki (haaihond/Nuvio-Wiki) | **best community hub** - installation, addons vs plugins, settings, stream badges, troubleshooting. Its [plugins page](https://nuvio.wiki/integrations/plugins) documents the QuickJS on-device runtime (settles the Hermes claim in the yoruix guide: wrong/outdated), streams-only scope, manifest repo format, and the app-store-vs-sideload plugin restriction. User-focused but the most accurate technical writing on Nuvio found anywhere |
 | Nuvio blog/coverage (nuviosync.com, troypointinsider, geekextreme, scribd PDF overview) | rejected: installation/consumer guides, not development docs |
 
+## Community guides and catalogs (analyzed October 2026)
+
+Full write-up in [community-resources.md](community-resources.md).
+
+| Source | Verdict |
+|---|---|
+| [nuvio.tv](https://nuvio.tv/) | official Nuvio site: clients, account dashboard, support |
+| [nuvio-plugin-library.vercel.app](https://nuvio-plugin-library.vercel.app/) | community plugin/addon catalog for Nuvio (Notion-backed), one-click manifest copy |
+| [numb3rs.stream](https://numb3rs.stream/) | best total-beginner guide for Stremio + Nuvio; wizard-built AIOStreams template; documents the AIOStreams + AIOMetadata stack this project plugs into |
+| [guides.viren070.me/stremio](https://guides.viren070.me/stremio) | the AIOStreams author's Stremio guide; de facto community docs |
+| [stremio-addons.net](https://stremio-addons.net/) | community addon catalog with rankings + submissions |
+| [stremio.ar0.eu](https://stremio.ar0.eu/) | Sudo-Flix's Stremio guide: debrid + Torrentio setup, per-device walkthroughs |
+
 ## Platform and API reference (used throughout this project)
 
 - [Cloudflare Workers docs](https://developers.cloudflare.com/workers/) - runtime, module syntax, limits
