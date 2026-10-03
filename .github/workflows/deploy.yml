@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: deploy-workers
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write  # mirror sync-back commit
@@ -15,6 +15,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -51,16 +52,37 @@ jobs:
 
       - name: Verify live endpoints
         run: |
-          sleep 15
-          curl -sf --max-time 60 -H "User-Agent: Mozilla/5.0" \
-            "https://db-index.gdrive3523.workers.dev/api/tv/" -o /dev/null \
-            || { echo "db-index API not responding"; exit 1; }
-          curl -sf --max-time 60 \
-            "https://db-addon.gdrive3523.workers.dev/manifest.json" -o /dev/null \
-            || { echo "addon manifest not responding"; exit 1; }
-          curl -sf --max-time 60 -H "User-Agent: Mozilla/5.0" \
-            "https://db-addon.gdrive3523.workers.dev/plugin/plugin.js" -o /tmp/served.js \
-            || { echo "Nuvio plugin not served"; exit 1; }
+          verify() {  # verify <label> <curl args...> -- retries up to 6x every 10s
+            local label="$1"; shift
+            for i in 1 2 3 4 5 6; do
+              if "$@" >/dev/null 2>&1; then echo "$label: OK"; return 0; fi
+              sleep 10
+            done
+            echo "$label: FAILED"; return 1
+          }
+
+          verify "index API" curl -sf --max-time 60 -H "User-Agent: Mozilla/5.0" \
+            "https://db-index.gdrive3523.workers.dev/api/tv/" -o /dev/null
+
+          verify "addon manifest" curl -sf --max-time 60 \
+            "https://db-addon.gdrive3523.workers.dev/manifest.json" -o /dev/null
+
+          # end-to-end stream pipeline: addon -> INDEX service binding -> TMDB -> Dropbox
+          verify "movie streams endpoint (service binding chain)" \
+            curl -sf --max-time 90 "https://db-addon.gdrive3523.workers.dev/stream/movie/tt1190080.json" \
+            -o /tmp/movie.json
+          python3 -c "import json;d=json.load(open('/tmp/movie.json'));assert 'streams' in d and isinstance(d['streams'],list)" \
+            || { echo "movie stream response malformed"; exit 1; }
+
+          verify "series streams endpoint" \
+            curl -sf --max-time 90 "https://db-addon.gdrive3523.workers.dev/stream/series/tt0903747:1:1.json" \
+            -o /tmp/series.json
+          python3 -c "import json;d=json.load(open('/tmp/series.json'));assert 'streams' in d and isinstance(d['streams'],list)" \
+            || { echo "series stream response malformed"; exit 1; }
+
+          # Nuvio plugin must be byte-identical to plugin.js
+          verify "nuvio plugin served" curl -sf --max-time 60 -H "User-Agent: Mozilla/5.0" \
+            "https://db-addon.gdrive3523.workers.dev/plugin/plugin.js" -o /tmp/served.js
           node --check /tmp/served.js || { echo "served plugin has syntax errors"; exit 1; }
           cmp --silent /tmp/served.js plugin.js \
             || { echo "served plugin differs from plugin.js (mirror out of sync)"; exit 1; }
