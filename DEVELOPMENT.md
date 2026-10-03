@@ -61,9 +61,16 @@ to `main` (and manually from the Actions tab). It:
    (scripts/sync_mirror.py) - if the push only changed `plugin.js`, the workflow
    fixes `addon.js` itself and commits it back with `[skip ci]`
 3. Deploys `dropbox-index.js` -> `db-index` and `addon.js` -> `db-addon`
-   (scripts/deploy_worker.py, Cloudflare API, full bindings declared per worker)
-4. Verifies the live endpoints, including that the served Nuvio plugin is
-   byte-identical to `plugin.js`
+   (scripts/deploy_worker.py, Cloudflare API, full bindings declared per
+   worker, observability/logs enabled on every deploy)
+4. Verifies the live endpoints with retries (no fixed sleep): index API,
+   addon manifest, a movie and a series stream request through the full
+   pipeline (addon -> INDEX service binding -> TMDB -> Dropbox), and that
+   the served Nuvio plugin is byte-identical to `plugin.js`
+
+Workers observability is enabled on every deploy, so request logs are
+viewable in the Cloudflare dashboard (Workers -> db-index/db-addon ->
+Logs) or via `npx wrangler tail db-index` when debugging live issues.
 
 Required repo secrets (Settings -> Secrets and variables -> Actions):
 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `DROPBOX_APP_KEY`,
