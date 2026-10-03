@@ -1,0 +1,76 @@
+name: Deploy Workers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-workers
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # mirror sync-back commit
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: |
+          node --check addon.js
+          node --check plugin.js
+          node --check dropbox-index.js
+
+      - name: Sync embedded plugin mirror
+        id: mirror
+        run: |
+          python3 scripts/sync_mirror.py
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy db-index
+        run: python3 scripts/deploy_worker.py db-index dropbox-index.js
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+
+      - name: Deploy db-addon
+        run: python3 scripts/deploy_worker.py db-addon addon.js
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Verify live endpoints
+        run: |
+          sleep 15
+          curl -sf --max-time 60 -H "User-Agent: Mozilla/5.0" \
+            "https://db-index.gdrive3523.workers.dev/api/tv/" -o /dev/null \
+            || { echo "db-index API not responding"; exit 1; }
+          curl -sf --max-time 60 \
+            "https://db-addon.gdrive3523.workers.dev/manifest.json" -o /dev/null \
+            || { echo "addon manifest not responding"; exit 1; }
+          curl -sf --max-time 60 -H "User-Agent: Mozilla/5.0" \
+            "https://db-addon.gdrive3523.workers.dev/plugin/plugin.js" -o /tmp/served.js \
+            || { echo "Nuvio plugin not served"; exit 1; }
+          node --check /tmp/served.js || { echo "served plugin has syntax errors"; exit 1; }
+          cmp --silent /tmp/served.js plugin.js \
+            || { echo "served plugin differs from plugin.js (mirror out of sync)"; exit 1; }
+          echo "all endpoints verified"
+
+      - name: Commit mirror sync-back
+        if: steps.mirror.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add addon.js
+          git commit -m "chore: sync embedded plugin mirror from plugin.js [skip ci]"
+          git push
