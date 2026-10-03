@@ -47,15 +47,22 @@ the in-app **Plugin Tester** in debug builds.
 
 ### Runtime quirks (IMPORTANT for this project)
 
-The yoruix guide documents a Hermes (React Native) runtime with no
-Node.js built-ins and async/await needing transpilation. **Our own
-on-device work (v1.1.5-v1.1.8) found QuickJS behavior instead**: no
-setTimeout/setInterval, fetch bridge handles raw spaces in URLs,
-subtitles top-level as `{url, language, name}`, `size` as string.
-On-device results are ground truth - treat guide claims as secondary
-to what the installed app actually does. Both may be true across
-different Nuvio clients/versions; plugin.js guards with feature
-detection rather than assuming either.
+Runtime: **QuickJS**, confirmed independently by our own on-device work
+(v1.1.5-v1.1.8) and by [nuvio.wiki](https://nuvio.wiki/integrations/plugins):
+provider code runs in a sandboxed embedded QuickJS instance, scoped to
+"fetch and parse" - no Node.js built-ins, no setTimeout/setInterval
+(guard with feature detection). Our on-device findings: the fetch
+bridge handles raw spaces in URLs (do not encode), subtitles go
+top-level as `{url, language, name}`, and `size` is a string.
+The yoruix guide's Hermes claim is outdated (pre-Kotlin-rewrite era);
+nuvio.wiki warns that manifest formats and example code from before
+the Kotlin Multiplatform rewrite may no longer apply. On-device
+results remain ground truth over any doc.
+
+Also from nuvio.wiki: plugins are streams-only (catalogs/metadata
+come from addons), only **sideloaded** app builds support plugins
+(app-store builds do not), and plugin repos install under
+Settings > Content & Discovery > Plugins or via the account dashboard.
 
 ## Ecosystem
 
@@ -81,6 +88,11 @@ detection rather than assuming either.
 
 ## Community
 
+- [nuvio.wiki](https://nuvio.wiki/) - comprehensive community wiki:
+  installation, addons vs plugins, settings, stream badges,
+  troubleshooting, FAQ; source at [haaihond/Nuvio-Wiki](https://github.com/haaihond/Nuvio-Wiki)
+- Nuvio Streams Discord ([discord.gg/nuvio](https://discord.gg/nuvio)) -
+  main hub for finding plugins (per the wiki)
 - [r/Nuvio](https://www.reddit.com/r/Nuvio/) and
   [r/nuvioaddons](https://www.reddit.com/r/nuvioaddons/) - main hubs
 - [Patreon](https://www.patreon.com/cw/NuvioMedia) - community funding
